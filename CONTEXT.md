@@ -44,29 +44,28 @@ A retro 2D pixel art game where a duck runs a salmon & honey sandwich shop and n
 - **Obstacles:** More walls/maze complexity each level
 - **Level 20:** Boss level with 5 small bears + 1 big boss bear (3 HP)
 
-### Current Placeholders (Need Pixel Art)
-- Duck = yellow square
-- Bear = brown square (red when angry, bigger boss bear)
-- Honey = yellow circle
-- Salmon = pink circle
-- Obstacles = gray rectangles
-- Bombs = red/gray circles
-- Power-up = cyan rotating diamond
+### Current Graphics
+- ✅ Duck = Kenney pixel art sprite (duck.png)
+- ✅ Bear = Kenney pixel art sprite (bear.png, tinted red when angry, scaled 3x for boss)
+- Honey = yellow circle (placeholder)
+- Salmon = pink circle (placeholder)
+- Obstacles = gray rectangles (placeholder)
+- Bombs = red/gray circles (placeholder)
+- Power-up = cyan rotating diamond (placeholder)
 
 ### Controls
 - **Arrow Keys:** Move duck
 - **Spacebar:** Peck bear / Push bomb
 
-## Next Steps (Task #8 Pending)
-1. **Find pixel art assets** from:
-   - [Kenney.nl](https://kenney.nl/assets) - 60k+ free assets, CC0
-   - [itch.io duck sprites](https://itch.io/game-assets/tag-duck/tag-pixel-art)
-   - [CraftPix freebies](https://craftpix.net/freebies/)
-
-2. **Replace placeholders** with actual sprites
+## Next Steps
+1. ✅ **Pixel art for duck & bear** - Downloaded Kenney Animal Pack Redux (CC0)
+2. **Replace remaining placeholders:**
+   - Find/create sprites for honey, salmon, bombs, walls, power-up
+   - Consider using Kenney Micro Roguelike pack for items
 3. **Add sound effects** (peck, collect, explosion, game over)
 4. **Polish:** particle effects, screen shake, better UI
 5. **Consider migration** to KAPLAY (Kaboom successor)
+6. **Rename repository?** Current: bear-duck, suggested: duck-sandwich-shop or similar
 
 ## Known Issues / Design Decisions
 - ✅ FIXED: Bears walking through walls → now bounce off
