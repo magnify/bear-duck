@@ -10,8 +10,9 @@ const k = kaboom({
   crisp: true,
 });
 
-// TODO: Load pixel art sprites later
-// For now, we're using colored shapes as placeholders
+// Load pixel art sprites
+k.loadSprite('duck', '/assets/duck.png');
+k.loadSprite('bear', '/assets/bear.png');
 
 // Game constants
 const PLAYER_SPEED = 120;
@@ -173,8 +174,8 @@ k.scene('game', (levelNum = 1) => {
 
   // Add player (duck)
   const player = k.add([
-    k.rect(24, 24),
-    k.color(255, 200, 0),
+    k.sprite('duck'),
+    k.scale(2),
     k.pos(k.center()),
     k.area(),
     k.body(),
@@ -196,13 +197,14 @@ k.scene('game', (levelNum = 1) => {
     const bearSpeed = BEAR_SPEED * (1 + levelNum * 0.1) * (isBoss ? 0.8 : 1);
 
     const bear = k.add([
-      k.rect(bearSize, bearSize),
-      k.color(isBoss ? k.rgb(100, 50, 20) : k.rgb(139, 69, 19)),
+      k.sprite('bear'),
+      k.scale(isBoss ? 3 : 2),
       k.pos(
         k.rand(100, k.width() - 100),
         k.rand(100, k.height() - 100)
       ),
       k.area(),
+      k.color(255, 255, 255), // Start with normal color
       // Removed k.body() so player can pass through bears
       k.anchor('center'),
       isBoss ? 'boss-bear' : 'bear',
@@ -257,13 +259,14 @@ k.scene('game', (levelNum = 1) => {
       player.flyTimer -= k.dt();
       if (player.flyTimer <= 0) {
         player.flying = false;
-        player.color = k.rgb(255, 200, 0);
+        player.color = k.rgb(255, 255, 255); // Reset to white (no tint)
       } else {
-        // Pulsing effect while flying
+        // Pulsing cyan tint while flying
+        const pulse = Math.sin(k.time() * 10) * 0.5 + 0.5;
         player.color = k.rgb(
-          255,
-          200 + Math.sin(k.time() * 10) * 55,
-          Math.sin(k.time() * 10) * 128
+          150 + pulse * 105,
+          200 + pulse * 55,
+          255
         );
       }
     }
