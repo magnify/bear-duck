@@ -689,4 +689,6 @@ k.scene('start', () => {
 });
 
 // Start the game
+console.log('Game initialized, starting...');
+console.log('Config loaded:', CONFIG);
 k.go('start');
