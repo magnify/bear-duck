@@ -175,7 +175,7 @@ k.scene('game', (levelNum = 1) => {
   // Add player (duck)
   const player = k.add([
     k.sprite('duck'),
-    k.scale(2),
+    k.scale(0.5),
     k.pos(k.center()),
     k.area(),
     k.body(),
@@ -198,7 +198,7 @@ k.scene('game', (levelNum = 1) => {
 
     const bear = k.add([
       k.sprite('bear'),
-      k.scale(isBoss ? 3 : 2),
+      k.scale(isBoss ? 0.8 : 0.6),
       k.pos(
         k.rand(100, k.width() - 100),
         k.rand(100, k.height() - 100)
