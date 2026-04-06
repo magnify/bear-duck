@@ -15,6 +15,9 @@ const k = kaboom({
 k.loadSprite('duck', '/assets/duck.png');
 k.loadSprite('bear', '/assets/bear.png');
 
+// Helper to convert color array to kaboom color
+const rgb = (colorArray) => k.rgb(colorArray[0], colorArray[1], colorArray[2]);
+
 // Game state
 let currentLevel = 1;
 let itemsCollected = 0;
@@ -84,20 +87,21 @@ k.scene('game', (levelNum = 1) => {
   // Add level background
   k.add([
     k.rect(k.width(), k.height()),
-    k.color(34, 139, 34),
+    rgb(CONFIG.COLORS.grass),
     k.pos(0, 0),
-    k.z(-1),
+    k.z(CONFIG.Z_INDEX.background),
   ]);
 
   // Add obstacles
   level.obstacles.forEach(obs => {
     k.add([
       k.rect(obs.width, obs.height),
-      k.color(80, 80, 80),
+      rgb(CONFIG.COLORS.wall),
       k.pos(obs.pos),
       k.area(),
       k.body({ isStatic: true }),
       k.anchor('center'),
+      k.z(CONFIG.Z_INDEX.obstacles),
       'obstacle',
       { destructible: true }
     ]);
@@ -105,14 +109,17 @@ k.scene('game', (levelNum = 1) => {
 
   // Add bombs
   level.bombs.forEach(bombData => {
-    const bombColor = bombData.armed ? k.rgb(255, 0, 0) : k.rgb(100, 100, 100);
+    const bombColor = bombData.armed
+      ? rgb(CONFIG.COLORS.bombArmed)
+      : rgb(CONFIG.COLORS.bombUnarmed);
 
     k.add([
-      k.circle(10),
-      k.color(bombColor),
+      k.circle(CONFIG.ENTITY_SIZES.bomb.radius),
+      bombColor,
       k.pos(bombData.pos),
       k.area(),
       k.anchor('center'),
+      k.z(CONFIG.Z_INDEX.bombs),
       bombData.armed ? 'armed-bomb' : 'bomb',
       {
         armed: bombData.armed,
@@ -123,15 +130,15 @@ k.scene('game', (levelNum = 1) => {
     // Add flashing effect for armed bombs
     if (bombData.armed) {
       k.add([
-        k.circle(12),
-        k.color(255, 150, 0),
+        k.circle(CONFIG.ENTITY_SIZES.bomb.radius + 2),
+        rgb(CONFIG.COLORS.bombFlash),
         k.pos(bombData.pos),
         k.opacity(0.5),
         k.anchor('center'),
-        k.z(-0.5),
+        k.z(CONFIG.Z_INDEX.bombs - 0.5),
         {
           update() {
-            this.opacity = Math.sin(k.time() * 5) * 0.3 + 0.5;
+            this.opacity = Math.sin(k.time() * CONFIG.ANIMATION.bombFlashSpeed) * 0.3 + 0.5;
           }
         }
       ]);
@@ -140,23 +147,25 @@ k.scene('game', (levelNum = 1) => {
 
   // Add power-ups
   level.powerups.forEach(powerup => {
+    const size = CONFIG.ENTITY_SIZES.powerup.size / 2;
     k.add([
       k.polygon([
-        k.vec2(0, -12),
-        k.vec2(12, 0),
-        k.vec2(0, 12),
-        k.vec2(-12, 0),
+        k.vec2(0, -size),
+        k.vec2(size, 0),
+        k.vec2(0, size),
+        k.vec2(-size, 0),
       ]),
-      k.color(0, 255, 255),
+      rgb(CONFIG.COLORS.powerup),
       k.pos(powerup.pos),
       k.area(),
       k.anchor('center'),
       k.rotate(0),
+      k.z(CONFIG.Z_INDEX.powerups),
       'powerup',
       {
         type: powerup.type,
         update() {
-          this.angle += 90 * k.dt();
+          this.angle += CONFIG.ANIMATION.powerupRotationSpeed * k.dt();
         }
       }
     ]);
@@ -165,15 +174,15 @@ k.scene('game', (levelNum = 1) => {
   // Add player (duck)
   const player = k.add([
     k.sprite('duck'),
-    k.scale(0.5),
+    k.scale(CONFIG.SPRITE_SCALES.player),
     k.pos(k.center()),
     k.area(),
     k.body(),
     k.anchor('center'),
-    k.z(10),
+    k.z(CONFIG.Z_INDEX.player),
     'player',
     {
-      speed: PLAYER_SPEED,
+      speed: CONFIG.MOVEMENT.playerSpeed,
       flying: false,
       flyTimer: 0,
       pushingBomb: null,
@@ -183,39 +192,40 @@ k.scene('game', (levelNum = 1) => {
   // Add bears
   for (let i = 0; i < bearCount; i++) {
     const isBoss = isBossLevel && i === bearCount - 1;
-    const bearSize = isBoss ? 48 : 28;
-    const bearSpeed = BEAR_SPEED * (1 + levelNum * 0.1) * (isBoss ? 0.8 : 1);
+    const bearSpeed = CONFIG.getBearSpeed(levelNum, isBoss);
 
     const bear = k.add([
       k.sprite('bear'),
-      k.scale(isBoss ? 0.8 : 0.6),
+      k.scale(isBoss ? CONFIG.SPRITE_SCALES.bearBoss : CONFIG.SPRITE_SCALES.bear),
       k.pos(
-        k.rand(100, k.width() - 100),
-        k.rand(100, k.height() - 100)
+        k.rand(CONFIG.LEVEL_GEN.marginX, k.width() - CONFIG.LEVEL_GEN.marginX),
+        k.rand(CONFIG.LEVEL_GEN.marginY, k.height() - CONFIG.LEVEL_GEN.marginY)
       ),
       k.area(),
-      k.color(255, 255, 255), // Start with normal color
+      rgb(isBoss ? CONFIG.COLORS.bearBoss : CONFIG.COLORS.bear),
       // Removed k.body() so player can pass through bears
       k.anchor('center'),
+      k.z(CONFIG.Z_INDEX.bears),
       isBoss ? 'boss-bear' : 'bear',
       {
         speed: bearSpeed,
         angry: false,
-        angerTimer: 0, // Grace period after becoming angry
+        angerTimer: 0,
         moveDir: k.vec2(k.rand(-1, 1), k.rand(-1, 1)).unit(),
         changeTimer: 0,
         isBoss: isBoss,
-        hp: isBoss ? 3 : 1,
+        hp: isBoss ? CONFIG.PROGRESSION.bossHP : 1,
       }
     ]);
 
     // Boss bear visual indicator
     if (isBoss) {
       k.add([
-        k.text('BOSS', { size: 12 }),
+        k.text('BOSS', { size: CONFIG.TEXT.sizes.small }),
         k.pos(bear.pos.add(0, -35)),
         k.anchor('center'),
-        k.color(255, 0, 0),
+        rgb(CONFIG.COLORS.bearAngry),
+        k.z(CONFIG.Z_INDEX.effects),
         {
           update() {
             this.pos = bear.pos.add(0, -35);
@@ -249,14 +259,15 @@ k.scene('game', (levelNum = 1) => {
       player.flyTimer -= k.dt();
       if (player.flyTimer <= 0) {
         player.flying = false;
-        player.color = k.rgb(255, 255, 255); // Reset to white (no tint)
+        player.color = rgb(CONFIG.COLORS.duck);
       } else {
         // Pulsing cyan tint while flying
-        const pulse = Math.sin(k.time() * 10) * 0.5 + 0.5;
+        const pulse = Math.sin(k.time() * CONFIG.ANIMATION.flyingPulseSpeed) * 0.5 + 0.5;
+        const [r, g, b] = CONFIG.COLORS.flyingTint;
         player.color = k.rgb(
-          150 + pulse * 105,
-          200 + pulse * 55,
-          255
+          r + pulse * (255 - r),
+          g + pulse * (255 - g),
+          b
         );
       }
     }
@@ -280,12 +291,12 @@ k.scene('game', (levelNum = 1) => {
     bears.forEach(b => {
       const dist = player.pos.dist(b.pos);
 
-      if (dist < PECK_RANGE) {
+      if (dist < CONFIG.INTERACTION.peckRange) {
         if (!b.angry) {
           // First peck - make angry
           b.angry = true;
-          b.angerTimer = 1.0; // 1 second grace period
-          b.color = k.rgb(180, 0, 0);
+          b.angerTimer = CONFIG.INTERACTION.angerGracePeriod;
+          b.color = rgb(CONFIG.COLORS.bearAngry);
           b.speed *= 1.5;
 
           // Drop items (enough to complete the level)
@@ -309,12 +320,13 @@ k.scene('game', (levelNum = 1) => {
 
         // Visual feedback
         k.add([
-          k.text(b.isBoss ? `PECK! HP: ${b.hp}` : 'PECK!', { size: 16 }),
+          k.text(b.isBoss ? `PECK! HP: ${b.hp}` : 'PECK!', { size: CONFIG.TEXT.sizes.feedback }),
           k.pos(b.pos),
           k.anchor('center'),
-          k.color(255, 255, 255),
-          k.lifespan(0.5),
-          k.move(k.UP, 50),
+          rgb(CONFIG.COLORS.uiText),
+          k.lifespan(CONFIG.ANIMATION.feedbackDuration),
+          k.move(k.UP, CONFIG.ANIMATION.feedbackMoveSpeed),
+          k.z(CONFIG.Z_INDEX.effects),
         ]);
       }
     });
@@ -323,10 +335,10 @@ k.scene('game', (levelNum = 1) => {
     const bombs = k.get('bomb');
     bombs.forEach(bomb => {
       const dist = player.pos.dist(bomb.pos);
-      if (dist < PECK_RANGE && bomb.pushable) {
+      if (dist < CONFIG.INTERACTION.peckRange && bomb.pushable) {
         // Push bomb away from player
         const pushDir = bomb.pos.sub(player.pos).unit();
-        bomb.moveTo(bomb.pos.add(pushDir.scale(100)), BOMB_PUSH_SPEED);
+        bomb.moveTo(bomb.pos.add(pushDir.scale(100)), CONFIG.MOVEMENT.bombPushSpeed);
 
         // Check if bomb hits obstacle
         bomb.onCollide('obstacle', (obs) => {
@@ -334,11 +346,12 @@ k.scene('game', (levelNum = 1) => {
             // Explode!
             k.add([
               k.circle(30),
-              k.color(255, 100, 0),
+              rgb(CONFIG.COLORS.explosion),
               k.pos(bomb.pos),
               k.anchor('center'),
               k.opacity(0.8),
-              k.lifespan(0.3),
+              k.lifespan(CONFIG.ANIMATION.explosionDuration),
+              k.z(CONFIG.Z_INDEX.effects),
             ]);
 
             k.destroy(obs);
@@ -413,7 +426,9 @@ k.scene('game', (levelNum = 1) => {
 
   // Drop item function
   function dropItem(type, pos) {
-    const itemColor = type === 'honey' ? k.rgb(255, 193, 7) : k.rgb(255, 105, 180);
+    const itemColor = type === 'honey'
+      ? rgb(CONFIG.COLORS.honey)
+      : rgb(CONFIG.COLORS.salmon);
 
     // Check if position is inside an obstacle
     let finalPos = pos;
@@ -423,7 +438,7 @@ k.scene('game', (levelNum = 1) => {
     while (!validPos && attempts < 10) {
       // Create temporary item to test collision
       const testItem = k.add([
-        k.circle(8),
+        k.circle(CONFIG.ENTITY_SIZES.item.radius),
         k.pos(finalPos),
         k.area(),
         k.anchor('center'),
@@ -458,11 +473,12 @@ k.scene('game', (levelNum = 1) => {
 
     // Add the actual item
     k.add([
-      k.circle(8),
-      k.color(itemColor),
+      k.circle(CONFIG.ENTITY_SIZES.item.radius),
+      itemColor,
       k.pos(finalPos),
       k.area(),
       k.anchor('center'),
+      k.z(CONFIG.Z_INDEX.items),
       'item',
       { type }
     ]);
@@ -486,15 +502,16 @@ k.scene('game', (levelNum = 1) => {
   player.onCollide('powerup', (powerup) => {
     if (powerup.type === 'fly') {
       player.flying = true;
-      player.flyTimer = FLY_DURATION;
+      player.flyTimer = CONFIG.INTERACTION.flyDuration;
 
       k.add([
-        k.text('FLYING!', { size: 24 }),
+        k.text('FLYING!', { size: CONFIG.TEXT.sizes.heading }),
         k.pos(player.pos),
         k.anchor('center'),
-        k.color(0, 255, 255),
+        rgb(CONFIG.COLORS.powerup),
         k.lifespan(1),
-        k.move(k.UP, 50),
+        k.move(k.UP, CONFIG.ANIMATION.feedbackMoveSpeed),
+        k.z(CONFIG.Z_INDEX.effects),
       ]);
     }
 
@@ -521,48 +538,51 @@ k.scene('game', (levelNum = 1) => {
 
   // UI
   k.add([
-    k.text(() => `Level ${currentLevel}${isBossLevel ? ' - BOSS!' : ''}`, { size: 20 }),
-    k.pos(12, 12),
-    k.color(255, 255, 255),
+    k.text(() => `Level ${currentLevel}${isBossLevel ? ' - BOSS!' : ''}`, { size: CONFIG.TEXT.sizes.ui }),
+    k.pos(CONFIG.TEXT.positions.uiPadding, CONFIG.TEXT.positions.uiPadding),
+    rgb(CONFIG.COLORS.uiText),
     k.fixed(),
+    k.z(CONFIG.Z_INDEX.ui),
   ]);
 
   k.add([
-    k.text(() => `Items: ${itemsCollected}/${itemsNeeded}`, { size: 20 }),
-    k.pos(12, 40),
-    k.color(255, 255, 255),
+    k.text(() => `Items: ${itemsCollected}/${itemsNeeded}`, { size: CONFIG.TEXT.sizes.ui }),
+    k.pos(CONFIG.TEXT.positions.uiPadding, CONFIG.TEXT.positions.uiPadding + CONFIG.TEXT.positions.lineHeight),
+    rgb(CONFIG.COLORS.uiText),
     k.fixed(),
+    k.z(CONFIG.Z_INDEX.ui),
   ]);
 
   k.add([
-    k.text(() => player.flying ? `Flying: ${player.flyTimer.toFixed(1)}s` : '', { size: 16 }),
-    k.pos(12, 68),
-    k.color(0, 255, 255),
+    k.text(() => player.flying ? `Flying: ${player.flyTimer.toFixed(1)}s` : '', { size: CONFIG.TEXT.sizes.body }),
+    k.pos(CONFIG.TEXT.positions.uiPadding, CONFIG.TEXT.positions.uiPadding + CONFIG.TEXT.positions.lineHeight * 2),
+    rgb(CONFIG.COLORS.powerup),
     k.fixed(),
+    k.z(CONFIG.Z_INDEX.ui),
   ]);
 });
 
 // Game Over scene
 k.scene('gameOver', (levelNum) => {
   k.add([
-    k.text('GAME OVER!', { size: 48 }),
+    k.text('GAME OVER!', { size: CONFIG.TEXT.sizes.title }),
     k.pos(k.center()),
     k.anchor('center'),
-    k.color(255, 0, 0),
+    rgb(CONFIG.COLORS.bearAngry),
   ]);
 
   k.add([
-    k.text('Caught by an angry bear!', { size: 16 }),
+    k.text('Caught by an angry bear!', { size: CONFIG.TEXT.sizes.body }),
     k.pos(k.center().add(0, 50)),
     k.anchor('center'),
-    k.color(255, 255, 255),
+    rgb(CONFIG.COLORS.uiText),
   ]);
 
   k.add([
-    k.text('Press SPACE to retry', { size: 20 }),
+    k.text('Press SPACE to retry', { size: CONFIG.TEXT.sizes.subheading }),
     k.pos(k.center().add(0, 90)),
     k.anchor('center'),
-    k.color(255, 200, 0),
+    rgb(CONFIG.COLORS.duck),
   ]);
 
   k.onKeyPress('space', () => {
@@ -572,27 +592,27 @@ k.scene('gameOver', (levelNum) => {
 
 // Level complete scene
 k.scene('levelComplete', (levelNum) => {
-  if (levelNum >= 20) {
+  if (levelNum >= CONFIG.PROGRESSION.bossLevel) {
     // Victory!
     k.add([
-      k.text('YOU WIN!', { size: 48 }),
+      k.text('YOU WIN!', { size: CONFIG.TEXT.sizes.title }),
       k.pos(k.center().sub(0, 40)),
       k.anchor('center'),
-      k.color(255, 215, 0),
+      rgb(CONFIG.COLORS.uiAccent),
     ]);
 
     k.add([
-      k.text('All 20 levels complete!', { size: 20 }),
+      k.text(`All ${CONFIG.PROGRESSION.bossLevel} levels complete!`, { size: CONFIG.TEXT.sizes.subheading }),
       k.pos(k.center().add(0, 20)),
       k.anchor('center'),
-      k.color(255, 255, 255),
+      rgb(CONFIG.COLORS.uiText),
     ]);
 
     k.add([
-      k.text('Press SPACE to play again', { size: 16 }),
+      k.text('Press SPACE to play again', { size: CONFIG.TEXT.sizes.body }),
       k.pos(k.center().add(0, 60)),
       k.anchor('center'),
-      k.color(200, 200, 200),
+      rgb(CONFIG.COLORS.uiText),
     ]);
 
     k.onKeyPress('space', () => {
@@ -600,17 +620,17 @@ k.scene('levelComplete', (levelNum) => {
     });
   } else {
     k.add([
-      k.text('Level Complete!', { size: 32 }),
+      k.text('Level Complete!', { size: CONFIG.TEXT.sizes.heading }),
       k.pos(k.center()),
       k.anchor('center'),
-      k.color(255, 255, 0),
+      rgb(CONFIG.COLORS.uiAccent),
     ]);
 
     k.add([
-      k.text(`Press SPACE for Level ${levelNum + 1}`, { size: 20 }),
+      k.text(`Press SPACE for Level ${levelNum + 1}`, { size: CONFIG.TEXT.sizes.subheading }),
       k.pos(k.center().add(0, 50)),
       k.anchor('center'),
-      k.color(255, 255, 255),
+      rgb(CONFIG.COLORS.uiText),
     ]);
 
     k.onKeyPress('space', () => {
@@ -622,45 +642,45 @@ k.scene('levelComplete', (levelNum) => {
 // Start screen
 k.scene('start', () => {
   k.add([
-    k.text('BEAR DUCK', { size: 48 }),
+    k.text('BEAR DUCK', { size: CONFIG.TEXT.sizes.title }),
     k.pos(k.center().sub(0, 80)),
     k.anchor('center'),
-    k.color(255, 200, 0),
+    rgb(CONFIG.COLORS.duck),
   ]);
 
   k.add([
-    k.text('Help the duck collect honey & salmon!', { size: 14 }),
+    k.text('Help the duck collect honey & salmon!', { size: CONFIG.TEXT.sizes.body }),
     k.pos(k.center().sub(0, 20)),
     k.anchor('center'),
-    k.color(255, 255, 255),
+    rgb(CONFIG.COLORS.uiText),
   ]);
 
   k.add([
-    k.text('Peck bears to make them drop items', { size: 12 }),
+    k.text('Peck bears to make them drop items', { size: CONFIG.TEXT.sizes.small }),
     k.pos(k.center().add(0, 5)),
     k.anchor('center'),
-    k.color(200, 200, 200),
+    rgb(CONFIG.COLORS.uiText),
   ]);
 
   k.add([
-    k.text('but watch out - they get angry!', { size: 12 }),
+    k.text('but watch out - they get angry!', { size: CONFIG.TEXT.sizes.small }),
     k.pos(k.center().add(0, 25)),
     k.anchor('center'),
-    k.color(200, 200, 200),
+    rgb(CONFIG.COLORS.uiText),
   ]);
 
   k.add([
-    k.text('Arrow Keys: Move | Space: Peck/Push', { size: 12 }),
+    k.text('Arrow Keys: Move | Space: Peck/Push', { size: CONFIG.TEXT.sizes.small }),
     k.pos(k.center().add(0, 55)),
     k.anchor('center'),
-    k.color(150, 150, 150),
+    rgb(CONFIG.COLORS.uiText),
   ]);
 
   k.add([
-    k.text('Press SPACE to Start', { size: 20 }),
+    k.text('Press SPACE to Start', { size: CONFIG.TEXT.sizes.subheading }),
     k.pos(k.center().add(0, 95)),
     k.anchor('center'),
-    k.color(0, 255, 0),
+    rgb(CONFIG.COLORS.powerup),
   ]);
 
   k.onKeyPress('space', () => {
