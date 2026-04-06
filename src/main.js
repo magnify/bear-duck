@@ -1,25 +1,19 @@
 import kaboom from 'kaboom';
+import * as CONFIG from './config.js';
 
 // Initialize Kaboom
 const k = kaboom({
-  width: 640,
-  height: 480,
+  width: CONFIG.GAME_WIDTH,
+  height: CONFIG.GAME_HEIGHT,
   scale: 2,
   canvas: document.querySelector('#game'),
-  background: [20, 20, 46],
+  background: CONFIG.COLORS.background,
   crisp: true,
 });
 
 // Load pixel art sprites
 k.loadSprite('duck', '/assets/duck.png');
 k.loadSprite('bear', '/assets/bear.png');
-
-// Game constants
-const PLAYER_SPEED = 120;
-const BEAR_SPEED = 60;
-const PECK_RANGE = 32;
-const FLY_DURATION = 5; // seconds
-const BOMB_PUSH_SPEED = 80;
 
 // Game state
 let currentLevel = 1;
@@ -32,21 +26,19 @@ function generateLevel(levelNum) {
   const bombs = [];
   const powerups = [];
 
-  // More obstacles and complexity as levels progress
-  const obstacleCount = Math.min(5 + levelNum * 2, 40);
-  const bombCount = Math.min(Math.floor(levelNum / 3), 5);
-  const hasPowerup = levelNum >= 3 && levelNum % 4 === 0;
+  const obstacleCount = CONFIG.getObstacleCount(levelNum);
+  const bombCount = CONFIG.getBombCount(levelNum);
+  const shouldHavePowerup = CONFIG.hasPowerup(levelNum);
 
   // Generate random obstacles (walls)
   for (let i = 0; i < obstacleCount; i++) {
-    const size = k.rand(30, 80);
     obstacles.push({
       pos: k.vec2(
-        k.rand(50, k.width() - 50),
-        k.rand(50, k.height() - 50)
+        k.rand(CONFIG.LEVEL_GEN.marginX, k.width() - CONFIG.LEVEL_GEN.marginX),
+        k.rand(CONFIG.LEVEL_GEN.marginY, k.height() - CONFIG.LEVEL_GEN.marginY)
       ),
-      width: size,
-      height: k.rand(30, 80),
+      width: k.rand(CONFIG.ENTITY_SIZES.obstacle.minWidth, CONFIG.ENTITY_SIZES.obstacle.maxWidth),
+      height: k.rand(CONFIG.ENTITY_SIZES.obstacle.minHeight, CONFIG.ENTITY_SIZES.obstacle.maxHeight),
     });
   }
 
@@ -54,19 +46,19 @@ function generateLevel(levelNum) {
   for (let i = 0; i < bombCount; i++) {
     bombs.push({
       pos: k.vec2(
-        k.rand(80, k.width() - 80),
-        k.rand(80, k.height() - 80)
+        k.rand(CONFIG.LEVEL_GEN.marginX, k.width() - CONFIG.LEVEL_GEN.marginX),
+        k.rand(CONFIG.LEVEL_GEN.marginY, k.height() - CONFIG.LEVEL_GEN.marginY)
       ),
       armed: k.rand() > 0.5,
     });
   }
 
   // Add flying power-up on certain levels
-  if (hasPowerup) {
+  if (shouldHavePowerup) {
     powerups.push({
       pos: k.vec2(
-        k.rand(100, k.width() - 100),
-        k.rand(100, k.height() - 100)
+        k.rand(CONFIG.LEVEL_GEN.marginX, k.width() - CONFIG.LEVEL_GEN.marginX),
+        k.rand(CONFIG.LEVEL_GEN.marginY, k.height() - CONFIG.LEVEL_GEN.marginY)
       ),
       type: 'fly',
     });
@@ -80,13 +72,11 @@ k.scene('game', (levelNum = 1) => {
   // Reset game state
   currentLevel = levelNum;
   itemsCollected = 0;
-  itemsNeeded = Math.min(5 + levelNum, 15);
 
-  const isBossLevel = levelNum === 20;
-  const bearCount = isBossLevel ? 5 : Math.min(1 + Math.floor(levelNum / 4), 6);
-
-  // Calculate items per bear so math works out
-  const itemsPerBear = Math.ceil(itemsNeeded / bearCount);
+  const isBossLevel = levelNum === CONFIG.PROGRESSION.bossLevel;
+  itemsNeeded = CONFIG.getItemsNeeded(levelNum);
+  const bearCount = CONFIG.getBearCount(levelNum, isBossLevel);
+  const itemsPerBear = CONFIG.getItemsPerBear(itemsNeeded, bearCount);
 
   // Generate level layout
   const level = generateLevel(levelNum);
