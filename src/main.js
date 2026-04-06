@@ -15,8 +15,8 @@ const k = kaboom({
 k.loadSprite('duck', '/assets/duck.png');
 k.loadSprite('bear', '/assets/bear.png');
 
-// Helper to convert color array to kaboom color
-const rgb = (colorArray) => k.rgb(colorArray[0], colorArray[1], colorArray[2]);
+// Helper to convert color array to kaboom color component
+const rgb = (colorArray) => k.color(colorArray[0], colorArray[1], colorArray[2]);
 
 // Game state
 let currentLevel = 1;
