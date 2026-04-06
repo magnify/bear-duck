@@ -1,0 +1,17 @@
+{
+  "name": "bear-duck",
+  "version": "1.0.0",
+  "description": "A retro 2D game where a duck chases bears to collect honey and salmon",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "kaboom": "^3000.1.17"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0"
+  }
+}
