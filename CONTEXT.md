@@ -92,10 +92,40 @@ bear-duck/
 ├── index.html          # Game container
 ├── package.json        # Dependencies
 ├── src/
-│   └── main.js        # All game logic (600+ lines)
+│   ├── config.js      # 🎨 Design system (all constants)
+│   └── main.js        # Game logic (700+ lines)
+├── public/
+│   ├── assets/        # Duck & bear sprites
+│   └── sprites/       # Full Kenney asset packs
 ├── .gitignore
 └── CONTEXT.md         # This file
 ```
+
+## Design System (src/config.js)
+
+**Single source of truth** for all game constants:
+- Grid system (16px base unit)
+- Sprite scales and entity sizes
+- Movement speeds, interaction ranges
+- Level progression formulas with helper functions
+- Complete color palette
+- Typography scales
+- Animation timing
+- Z-index layers
+
+**Key helpers:**
+```js
+CONFIG.getItemsNeeded(level)      // Items required for level
+CONFIG.getBearCount(level)        // Number of bears
+CONFIG.getBearSpeed(level)        // Speed with scaling
+CONFIG.getItemsPerBear()          // Ensures level is winnable
+```
+
+**Benefits:**
+- No magic numbers in code
+- Consistent sizing and spacing
+- Easy balance adjustments
+- All values have semantic names
 
 ## Commands
 ```bash
