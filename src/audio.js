@@ -78,6 +78,15 @@ export const sfx = {
     tone({ freq: 440, to: 55, dur: 0.6, type: 'sawtooth', vol: 0.22 });
   },
 
+  buy() {
+    tone({ freq: 784, dur: 0.08, type: 'triangle', vol: 0.2 });
+    tone({ freq: 1175, dur: 0.12, type: 'triangle', vol: 0.2, delay: 0.07 });
+  },
+
+  deny() {
+    tone({ freq: 160, to: 110, dur: 0.15, type: 'square', vol: 0.12 });
+  },
+
   clear() {
     [523, 659, 784].forEach((f, i) =>
       tone({ freq: f, dur: 0.12, type: 'square', vol: 0.16, delay: i * 0.1 }));

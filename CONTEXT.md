@@ -20,6 +20,17 @@ were carried over from the Kaboom.js version on `master`.
 - **Generated levels.** Random wall clusters, flood-filled from spawn so every
   open tile is always reachable (`src/level.js`).
 
+## v2.1: Touch controls, walk animations, shop upgrades
+- **Touch controls** — left half of the screen is a floating virtual joystick,
+  right half pecks (with an on-screen PECK button affordance). Menus respond
+  to taps. Desktop keyboard unchanged.
+- **Walk animations** — two-frame walk cycles for duck and bears (8 fps).
+- **Sandwich shop** — between levels, collected ingredients are banked into a
+  pantry and spent on upgrades: Faster Feet (+12% speed, max 3), Long Beak
+  (+25% peck range, max 2), Extra Heart (+1 life, max 2), Wing Tonic
+  (+2s flight, max 2). Prices climb per purchase. Upgrades last the run and
+  reset on game over. Defined in `UPGRADES` in `src/config.js`.
+
 ## Game Mechanics (same idea as v1)
 1. **Peck bears** (spacebar) → they drop honey/salmon items
 2. **Collect items** → progress toward the level goal

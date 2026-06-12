@@ -87,6 +87,17 @@ export function getPushBombCount(level) {
   return 1 + (level % 2 === 0 ? 1 : 0);
 }
 
+/**
+ * Sandwich shop upgrades, bought between levels with banked ingredients.
+ * `cost` takes the number already owned so prices climb per purchase.
+ */
+export const UPGRADES = [
+  { id: 'feet', name: 'FASTER FEET', desc: '+12% move speed', max: 3, cost: (n) => 6 + 4 * n },
+  { id: 'beak', name: 'LONG BEAK', desc: '+25% peck range', max: 2, cost: (n) => 8 + 6 * n },
+  { id: 'heart', name: 'EXTRA HEART', desc: '+1 life', max: 2, cost: (n) => 10 + 8 * n },
+  { id: 'wings', name: 'WING TONIC', desc: '+2s flight time', max: 2, cost: (n) => 6 + 6 * n },
+];
+
 export const COLORS = {
   grass: '#3a6b35',
   grassLight: '#447a3e',

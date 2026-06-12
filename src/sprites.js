@@ -45,6 +45,26 @@ const DUCK_MAP = [
   '................',
 ];
 
+// Second walk frame: same body, feet shuffled.
+const DUCK_MAP2 = [
+  '................',
+  '......YYYY......',
+  '.....YYYYYY.....',
+  '.....YYKYYY.....',
+  '.....YYYYYYOO...',
+  '.....YYYYYYOO...',
+  '..Y..YYYYYY.....',
+  '..YY.WWYYYY.....',
+  '..YYWWWYYYYY....',
+  '..YYWWWYYYYYY...',
+  '..YYYWWYYYYYY...',
+  '...YYYYYYYYYY...',
+  '....YYYYYYYY....',
+  '.....OO...OO....',
+  '......OO.OO.....',
+  '................',
+];
+
 const BEAR_MAP = [
   '..DD......DD....',
   '.DBBD....DBBD...',
@@ -61,6 +81,25 @@ const BEAR_MAP = [
   '.BBBBBBBBBBBB...',
   '..BBB.BBBB.BB...',
   '..DDD.DDDD.DD...',
+  '................',
+];
+
+const BEAR_MAP2 = [
+  '..DD......DD....',
+  '.DBBD....DBBD...',
+  '.DBBD....DBBD...',
+  '..BBBBBBBBBB....',
+  '.BBBBBBBBBBBB...',
+  '.BBKBBBBBBKBB...',
+  '.BBBBMMMMBBBB...',
+  '.BBBBMKKMBBBB...',
+  '..BBBBMMBBBB....',
+  '.BBBBBBBBBBBB...',
+  'BBBBBBBBBBBBBB..',
+  'BBBBBBBBBBBBBB..',
+  '.BBBBBBBBBBBB...',
+  '...BB.BBBB.BBB..',
+  '...DD.DDDD.DDD..',
   '................',
 ];
 
@@ -176,8 +215,11 @@ const diamondPalette = { C: '#4dd0e1', c: '#26a6b8', W: '#e0fbff' };
 export function buildSprites() {
   return {
     duck: bake(DUCK_MAP, duckPalette),
+    duck2: bake(DUCK_MAP2, duckPalette),
     bear: bake(BEAR_MAP, bearPalette),
+    bear2: bake(BEAR_MAP2, bearPalette),
     bearAngry: bake(BEAR_MAP, angryPalette),
+    bearAngry2: bake(BEAR_MAP2, angryPalette),
     honey: bake(HONEY_MAP, honeyPalette),
     salmon: bake(SALMON_MAP, salmonPalette),
     rock: bake(ROCK_MAP, rockPalette),
