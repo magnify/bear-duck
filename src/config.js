@@ -1,278 +1,100 @@
 /**
- * Bear Duck Game - Design System
- *
- * All game constants, sizing, and visual specs defined in one place.
- * Base unit: 16px (1 grid unit)
+ * Bear Duck — game constants and progression formulas.
+ * Single source of truth: no magic numbers in game code.
  */
 
-// ============================================================================
-// GRID & SPACING
-// ============================================================================
-export const GRID_UNIT = 16; // Base unit for all measurements
-export const GAME_WIDTH = 640;
-export const GAME_HEIGHT = 480;
+export const TILE = 48;
+export const COLS = 20;
+export const ROWS = 15;
+export const WIDTH = COLS * TILE;   // 960
+export const HEIGHT = ROWS * TILE;  // 720
 
-// ============================================================================
-// SPRITE SIZING
-// ============================================================================
-// Kenney sprites are 128x128px, we scale them down to fit our grid
-export const SPRITE_SCALES = {
-  player: 0.5,        // Duck: 128 * 0.5 = 64px (4 grid units)
-  bear: 0.6,          // Bear: 128 * 0.6 = ~77px (~5 grid units)
-  bearBoss: 0.8,      // Boss: 128 * 0.8 = ~102px (~6 grid units)
-  item: 1.0,          // Items use custom sizes (circles/shapes)
-  obstacle: 1.0,      // Obstacles use custom sizes (rectangles)
-};
+export const MAX_LEVEL = 20;
+export const START_LIVES = 3;
 
-// ============================================================================
-// ENTITY SIZES (in pixels)
-// ============================================================================
-export const ENTITY_SIZES = {
-  // Characters
-  player: {
-    width: 64,
-    height: 64,
-    collisionRadius: 24, // Smaller hitbox for fairness
-  },
-  bear: {
-    width: 77,
-    height: 77,
-    collisionRadius: 32,
-  },
-  bearBoss: {
-    width: 102,
-    height: 102,
-    collisionRadius: 40,
-  },
+// Player
+export const DUCK_SPEED = 230;        // px/s
+export const DUCK_RADIUS = 16;        // collision radius
+export const PECK_RANGE = 64;         // px, distance to peck a bear / push a bomb
+export const PECK_COOLDOWN = 0.3;     // s
+export const FLY_DURATION = 5;        // s
 
-  // Items
-  item: {
-    radius: 8,
-    collisionRadius: 12, // Slightly larger for easier collection
-  },
+// Bears
+export const BEAR_RADIUS = 18;
+export const BEAR_BASE_SPEED = 55;    // px/s while wandering, level 1
+export const BEAR_SPEED_GROWTH = 1.1; // +10% per level
+export const BEAR_ANGRY_MULT = 1.9;   // angry bears chase this much faster
+export const BEAR_MAX_SPEED = 210;    // angry speed cap (duck stays faster)
+export const GRACE_PERIOD = 1.0;      // s after a peck before an angry bear can hurt you
+export const DROPS_PER_PECK = 2;      // items scattered per peck
+export const BOSS_HP = 3;
+export const BOSS_DEFEAT_DROPS = 6;   // item burst when the boss goes down
 
-  // Obstacles
-  obstacle: {
-    minWidth: 30,
-    maxWidth: 80,
-    minHeight: 30,
-    maxHeight: 80,
-  },
+// Bombs
+export const BOMB_RADIUS = 14;
+export const BOMB_SLIDE_SPEED = 420;  // px/s for a pushed bomb
+export const EXPLOSION_RADIUS = 1.6;  // in tiles, walls destroyed / damage dealt
 
-  // Bombs
-  bomb: {
-    radius: 10,
-    collisionRadius: 12,
-  },
+// Power-up
+export const FLY_LEVELS = new Set([3, 7, 11, 15, 19]);
 
-  // Power-ups
-  powerup: {
-    size: 24, // Diamond size
-    collisionRadius: 16,
-  },
-};
+// Timing
+export const LEVEL_CLEAR_PAUSE = 2.2; // s banner before next level
+export const DEATH_PAUSE = 1.6;       // s before respawn
 
-// ============================================================================
-// GAMEPLAY CONSTANTS
-// ============================================================================
-export const MOVEMENT = {
-  playerSpeed: 120,
-  bearSpeed: 60,
-  bombPushSpeed: 80,
-};
-
-export const INTERACTION = {
-  peckRange: 32,           // How close to be to peck
-  angerGracePeriod: 1.0,   // Seconds of invincibility after pecking
-  flyDuration: 5.0,        // Seconds of flying
-};
-
-export const PROGRESSION = {
-  baseItemsNeeded: 5,      // Level 1 needs this many items
-  maxItemsNeeded: 15,      // Cap at this many items
-  bearSpeedIncrement: 0.1, // 10% faster each level
-  bossLevel: 20,           // Final boss level
-
-  // Bears per level formula: 1 + floor(level / 4)
-  baseBearCount: 1,
-  bearIncrementEvery: 4,
-  maxBears: 6,
-
-  // Boss level specifics
-  bossBearCount: 5,        // 4 small + 1 boss
-  bossHP: 3,
-};
-
-// ============================================================================
-// LEVEL GENERATION
-// ============================================================================
-export const LEVEL_GEN = {
-  obstacleBaseCount: 5,
-  obstacleIncrement: 2,     // +2 obstacles per level
-  maxObstacles: 40,
-
-  bombCountDivisor: 3,      // floor(level / 3) bombs
-  maxBombs: 5,
-
-  powerupEveryNLevels: 4,   // Flying power-up on levels 3, 7, 11, etc.
-
-  // Safe spawn margins
-  marginX: 80,
-  marginY: 80,
-};
-
-// ============================================================================
-// COLORS
-// ============================================================================
-export const COLORS = {
-  // Backgrounds
-  background: [20, 20, 46],      // Dark blue
-  grass: [34, 139, 34],          // Forest green
-
-  // Entities
-  duck: [255, 255, 255],         // White tint (no tint)
-  bear: [255, 255, 255],         // White tint (no tint)
-  bearAngry: [180, 0, 0],        // Red tint
-  bearBoss: [255, 255, 255],     // White tint
-
-  // Items
-  honey: [255, 193, 7],          // Golden yellow
-  salmon: [255, 105, 180],       // Pink
-
-  // Obstacles
-  wall: [80, 80, 80],            // Dark gray
-
-  // Bombs
-  bombArmed: [255, 0, 0],        // Red
-  bombUnarmed: [100, 100, 100],  // Gray
-  bombFlash: [255, 150, 0],      // Orange (pulsing)
-
-  // Power-ups
-  powerup: [0, 255, 255],        // Cyan
-
-  // Effects
-  flyingTint: [150, 200, 255],   // Light cyan tint
-  explosion: [255, 100, 0],      // Orange
-
-  // UI
-  uiText: [255, 255, 255],       // White
-  uiAccent: [255, 215, 0],       // Gold
-};
-
-// ============================================================================
-// TYPOGRAPHY
-// ============================================================================
-export const TEXT = {
-  sizes: {
-    title: 48,
-    heading: 32,
-    subheading: 20,
-    body: 16,
-    ui: 20,
-    feedback: 16,
-    small: 12,
-  },
-
-  positions: {
-    uiPadding: 12,
-    lineHeight: 28,
-  },
-};
-
-// ============================================================================
-// ANIMATION & TIMING
-// ============================================================================
-export const ANIMATION = {
-  powerupRotationSpeed: 90,  // degrees per second
-  bombFlashSpeed: 5,         // pulses per second
-  flyingPulseSpeed: 10,      // pulses per second
-
-  feedbackDuration: 0.5,     // seconds for "PECK!" text
-  feedbackMoveSpeed: 50,     // pixels per second upward
-
-  explosionDuration: 0.3,    // seconds for explosion effect
-};
-
-// ============================================================================
-// Z-INDEX LAYERS
-// ============================================================================
-export const Z_INDEX = {
-  background: -1,
-  obstacles: 0,
-  items: 5,
-  bombs: 5,
-  powerups: 5,
-  bears: 8,
-  player: 10,
-  effects: 15,
-  ui: 100,
-};
-
-// ============================================================================
-// HELPER FUNCTIONS
-// ============================================================================
-
-/**
- * Calculate items needed for a given level
- */
+/** Items required to clear a level: 6 on level 1, +1 per level, capped at 15. */
 export function getItemsNeeded(level) {
+  return Math.min(6 + (level - 1), 15);
+}
+
+/** Bears on a level: start with 1, +1 every 4 levels (max 6). Level 20 = 4 + boss. */
+export function getBearCount(level) {
+  if (level === MAX_LEVEL) return 5;
+  return Math.min(1 + Math.floor((level - 1) / 4), 6);
+}
+
+/** Wander speed for bears on a level (angry multiplier applied separately). */
+export function getBearSpeed(level) {
   return Math.min(
-    PROGRESSION.baseItemsNeeded + level,
-    PROGRESSION.maxItemsNeeded
+    BEAR_BASE_SPEED * Math.pow(BEAR_SPEED_GROWTH, level - 1),
+    BEAR_MAX_SPEED / BEAR_ANGRY_MULT
   );
 }
 
 /**
- * Calculate number of bears for a given level
+ * Items each bear carries. Total across all bears always exceeds the level
+ * goal so a level can never become unwinnable.
  */
-export function getBearCount(level, isBossLevel) {
-  if (isBossLevel) return PROGRESSION.bossBearCount;
-
-  return Math.min(
-    PROGRESSION.baseBearCount + Math.floor(level / PROGRESSION.bearIncrementEvery),
-    PROGRESSION.maxBears
-  );
+export function getItemsPerBear(level) {
+  const bears = getBearCount(level);
+  return Math.ceil(getItemsNeeded(level) / bears) + 1;
 }
 
-/**
- * Calculate bear speed for a given level
- */
-export function getBearSpeed(level, isBoss) {
-  const multiplier = 1 + (level * PROGRESSION.bearSpeedIncrement);
-  const speed = MOVEMENT.bearSpeed * multiplier;
-  return isBoss ? speed * 0.8 : speed; // Boss is 20% slower
+/** Interior wall tiles to scatter — more maze each level. */
+export function getWallBudget(level) {
+  return Math.min(10 + level * 3, 64);
 }
 
-/**
- * Calculate items per bear to ensure level is completable
- */
-export function getItemsPerBear(itemsNeeded, bearCount) {
-  return Math.ceil(itemsNeeded / bearCount);
+/** Armed (deadly, flashing) bombs on a level. */
+export function getArmedBombCount(level) {
+  if (level < 2) return 0;
+  return Math.min(1 + Math.floor(level / 6), 4);
 }
 
-/**
- * Calculate number of obstacles for a given level
- */
-export function getObstacleCount(level) {
-  return Math.min(
-    LEVEL_GEN.obstacleBaseCount + (level * LEVEL_GEN.obstacleIncrement),
-    LEVEL_GEN.maxObstacles
-  );
+/** Pushable (gray) bombs on a level — shove them into walls to blast through. */
+export function getPushBombCount(level) {
+  if (level < 4) return 0;
+  return 1 + (level % 2 === 0 ? 1 : 0);
 }
 
-/**
- * Calculate number of bombs for a given level
- */
-export function getBombCount(level) {
-  return Math.min(
-    Math.floor(level / LEVEL_GEN.bombCountDivisor),
-    LEVEL_GEN.maxBombs
-  );
-}
-
-/**
- * Check if level should have a flying power-up
- */
-export function hasPowerup(level) {
-  return level >= 3 && level % LEVEL_GEN.powerupEveryNLevels === 0;
-}
+export const COLORS = {
+  grass: '#3a6b35',
+  grassLight: '#447a3e',
+  hudText: '#f5f1e3',
+  hudDim: '#9aa3b2',
+  honey: '#f0b429',
+  salmon: '#f08080',
+  danger: '#e74c3c',
+  fly: '#4dd0e1',
+  night: 'rgba(10, 14, 20, 0.82)',
+};

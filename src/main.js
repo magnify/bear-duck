@@ -1,694 +1,673 @@
-import kaboom from 'kaboom';
-import * as CONFIG from './config.js';
+/**
+ * Bear Duck — Sandwich Shop Rush
+ *
+ * A duck runs a salmon & honey sandwich shop. Peck bears so they drop
+ * honey and salmon, collect enough to fill the day's orders, and don't
+ * get caught by the bears you just made angry.
+ *
+ * Built from scratch on the raw canvas API: no game framework, no image
+ * or audio assets. Sprites are baked in sprites.js, sounds in audio.js.
+ */
 
-// Initialize Kaboom
-const k = kaboom({
-  width: CONFIG.GAME_WIDTH,
-  height: CONFIG.GAME_HEIGHT,
-  scale: 2,
-  canvas: document.querySelector('#game'),
-  background: CONFIG.COLORS.background,
-  crisp: true,
-});
+import * as C from './config.js';
+import { buildSprites, bakeBackground } from './sprites.js';
+import { sfx } from './audio.js';
+import { generateLevel, isWall, setFloor, tileCenter } from './level.js';
 
-// Load pixel art sprites
-k.loadSprite('duck', '/assets/duck.png');
-k.loadSprite('bear', '/assets/bear.png');
+const canvas = document.getElementById('game');
+canvas.width = C.WIDTH;
+canvas.height = C.HEIGHT;
+const ctx = canvas.getContext('2d');
+ctx.imageSmoothingEnabled = false;
 
-// Helper to convert color array to kaboom color component
-const rgb = (colorArray) => k.color(colorArray[0], colorArray[1], colorArray[2]);
+const sprites = buildSprites();
 
+// ---------------------------------------------------------------------------
 // Game state
-let currentLevel = 1;
-let itemsCollected = 0;
-let itemsNeeded = 5;
+// ---------------------------------------------------------------------------
 
-// Level layouts - define obstacle patterns
-function generateLevel(levelNum) {
-  const obstacles = [];
-  const bombs = [];
-  const powerups = [];
+const game = {
+  state: 'title', // title | play | clear | dead | gameover | victory
+  level: 1,
+  lives: C.START_LIVES,
+  collected: 0,
+  needed: 0,
+  stateTimer: 0,
+  time: 0,
+  shake: 0,
+  background: null,
+  grid: null,
+  player: null,
+  bears: [],
+  items: [],
+  bombs: [],
+  powerup: null,
+  particles: [],
+};
 
-  const obstacleCount = CONFIG.getObstacleCount(levelNum);
-  const bombCount = CONFIG.getBombCount(levelNum);
-  const shouldHavePowerup = CONFIG.hasPowerup(levelNum);
+const keys = new Set();
+let peckQueued = false;
 
-  // Generate random obstacles (walls)
-  for (let i = 0; i < obstacleCount; i++) {
-    obstacles.push({
-      pos: k.vec2(
-        k.rand(CONFIG.LEVEL_GEN.marginX, k.width() - CONFIG.LEVEL_GEN.marginX),
-        k.rand(CONFIG.LEVEL_GEN.marginY, k.height() - CONFIG.LEVEL_GEN.marginY)
-      ),
-      width: k.rand(CONFIG.ENTITY_SIZES.obstacle.minWidth, CONFIG.ENTITY_SIZES.obstacle.maxWidth),
-      height: k.rand(CONFIG.ENTITY_SIZES.obstacle.minHeight, CONFIG.ENTITY_SIZES.obstacle.maxHeight),
-    });
+window.addEventListener('keydown', (e) => {
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
+    e.preventDefault();
   }
+  sfx.unlock();
+  keys.add(e.code);
+  if (e.code === 'Space' && !e.repeat) peckQueued = true;
+  if (e.code === 'Enter' && !e.repeat) handleEnter();
+});
+window.addEventListener('keyup', (e) => keys.delete(e.code));
 
-  // Generate bombs
-  for (let i = 0; i < bombCount; i++) {
-    bombs.push({
-      pos: k.vec2(
-        k.rand(CONFIG.LEVEL_GEN.marginX, k.width() - CONFIG.LEVEL_GEN.marginX),
-        k.rand(CONFIG.LEVEL_GEN.marginY, k.height() - CONFIG.LEVEL_GEN.marginY)
-      ),
-      armed: k.rand() > 0.5,
-    });
+function handleEnter() {
+  if (game.state === 'title' || game.state === 'gameover' || game.state === 'victory') {
+    game.level = 1;
+    game.lives = C.START_LIVES;
+    startLevel(1);
   }
-
-  // Add flying power-up on certain levels
-  if (shouldHavePowerup) {
-    powerups.push({
-      pos: k.vec2(
-        k.rand(CONFIG.LEVEL_GEN.marginX, k.width() - CONFIG.LEVEL_GEN.marginX),
-        k.rand(CONFIG.LEVEL_GEN.marginY, k.height() - CONFIG.LEVEL_GEN.marginY)
-      ),
-      type: 'fly',
-    });
-  }
-
-  return { obstacles, bombs, powerups };
 }
 
-// Main game scene
-k.scene('game', (levelNum = 1) => {
-  // Reset game state
-  currentLevel = levelNum;
-  itemsCollected = 0;
+// ---------------------------------------------------------------------------
+// Level setup
+// ---------------------------------------------------------------------------
 
-  const isBossLevel = levelNum === CONFIG.PROGRESSION.bossLevel;
-  itemsNeeded = CONFIG.getItemsNeeded(levelNum);
-  const bearCount = CONFIG.getBearCount(levelNum, isBossLevel);
-  const itemsPerBear = CONFIG.getItemsPerBear(itemsNeeded, bearCount);
+function startLevel(level) {
+  const layout = generateLevel(level);
+  game.level = level;
+  game.grid = layout.grid;
+  game.collected = 0;
+  game.needed = C.getItemsNeeded(level);
+  game.items = [];
+  game.bombs = [];
+  game.particles = [];
+  game.powerup = null;
+  game.shake = 0;
+  game.background = bakeBackground(C.WIDTH, C.HEIGHT, C.TILE, level * 7919, C.COLORS);
 
-  // Generate level layout
-  const level = generateLevel(levelNum);
+  const spawn = tileCenter(layout.spawn.r, layout.spawn.c);
+  game.player = {
+    x: spawn.x, y: spawn.y,
+    facing: { x: 1, y: 0 },
+    peckTimer: 0,
+    peckCooldown: 0,
+    flyTimer: 0,
+  };
 
-  // Add level background
-  k.add([
-    k.rect(k.width(), k.height()),
-    rgb(CONFIG.COLORS.grass),
-    k.pos(0, 0),
-    k.z(CONFIG.Z_INDEX.background),
-  ]);
-
-  // Add obstacles
-  level.obstacles.forEach(obs => {
-    k.add([
-      k.rect(obs.width, obs.height),
-      rgb(CONFIG.COLORS.wall),
-      k.pos(obs.pos),
-      k.area(),
-      k.body({ isStatic: true }),
-      k.anchor('center'),
-      k.z(CONFIG.Z_INDEX.obstacles),
-      'obstacle',
-      { destructible: true }
-    ]);
+  const carry = C.getItemsPerBear(level);
+  game.bears = layout.bearSpots.map((spot, i) => {
+    const pos = tileCenter(spot.r, spot.c);
+    const boss = level === C.MAX_LEVEL && i === 0;
+    return {
+      x: pos.x, y: pos.y,
+      boss,
+      hp: boss ? C.BOSS_HP : 1,
+      carry: boss ? 0 : carry,
+      angry: false,
+      grace: 0,
+      dir: Math.random() * Math.PI * 2,
+      wanderTimer: 1 + Math.random() * 2,
+      facing: 1,
+    };
   });
 
-  // Add bombs
-  level.bombs.forEach(bombData => {
-    const bombColor = bombData.armed
-      ? rgb(CONFIG.COLORS.bombArmed)
-      : rgb(CONFIG.COLORS.bombUnarmed);
+  for (const spot of layout.armedBombSpots) {
+    const pos = tileCenter(spot.r, spot.c);
+    game.bombs.push({ x: pos.x, y: pos.y, armed: true, vx: 0, vy: 0, sliding: false });
+  }
+  for (const spot of layout.pushBombSpots) {
+    const pos = tileCenter(spot.r, spot.c);
+    game.bombs.push({ x: pos.x, y: pos.y, armed: false, vx: 0, vy: 0, sliding: false });
+  }
+  if (layout.powerSpot) {
+    const pos = tileCenter(layout.powerSpot.r, layout.powerSpot.c);
+    game.powerup = { x: pos.x, y: pos.y };
+  }
 
-    k.add([
-      k.circle(CONFIG.ENTITY_SIZES.bomb.radius),
-      bombColor,
-      k.pos(bombData.pos),
-      k.area(),
-      k.anchor('center'),
-      k.z(CONFIG.Z_INDEX.bombs),
-      bombData.armed ? 'armed-bomb' : 'bomb',
-      {
-        armed: bombData.armed,
-        pushable: !bombData.armed,
-      }
-    ]);
+  game.state = 'play';
+}
 
-    // Add flashing effect for armed bombs
-    if (bombData.armed) {
-      k.add([
-        k.circle(CONFIG.ENTITY_SIZES.bomb.radius + 2),
-        rgb(CONFIG.COLORS.bombFlash),
-        k.pos(bombData.pos),
-        k.opacity(0.5),
-        k.anchor('center'),
-        k.z(CONFIG.Z_INDEX.bombs - 0.5),
-        {
-          update() {
-            this.opacity = Math.sin(k.time() * CONFIG.ANIMATION.bombFlashSpeed) * 0.3 + 0.5;
-          }
-        }
-      ]);
+// ---------------------------------------------------------------------------
+// Physics helpers
+// ---------------------------------------------------------------------------
+
+function hitsWall(x, y, radius) {
+  const minC = Math.floor((x - radius) / C.TILE);
+  const maxC = Math.floor((x + radius) / C.TILE);
+  const minR = Math.floor((y - radius) / C.TILE);
+  const maxR = Math.floor((y + radius) / C.TILE);
+  for (let r = minR; r <= maxR; r++) {
+    for (let c = minC; c <= maxC; c++) {
+      if (isWall(game.grid, r, c)) return true;
     }
-  });
+  }
+  return false;
+}
 
-  // Add power-ups
-  level.powerups.forEach(powerup => {
-    const size = CONFIG.ENTITY_SIZES.powerup.size / 2;
-    k.add([
-      k.polygon([
-        k.vec2(0, -size),
-        k.vec2(size, 0),
-        k.vec2(0, size),
-        k.vec2(-size, 0),
-      ]),
-      rgb(CONFIG.COLORS.powerup),
-      k.pos(powerup.pos),
-      k.area(),
-      k.anchor('center'),
-      k.rotate(0),
-      k.z(CONFIG.Z_INDEX.powerups),
-      'powerup',
-      {
-        type: powerup.type,
-        update() {
-          this.angle += CONFIG.ANIMATION.powerupRotationSpeed * k.dt();
-        }
-      }
-    ]);
-  });
+/** Move a circle, sliding along walls (each axis resolved separately). */
+function moveCircle(ent, dx, dy, radius, ignoreWalls = false) {
+  let blocked = false;
+  if (ignoreWalls) {
+    // Flying: only the outer border holds you in.
+    const lo = C.TILE + radius, hiX = C.WIDTH - C.TILE - radius, hiY = C.HEIGHT - C.TILE - radius;
+    ent.x = Math.min(Math.max(ent.x + dx, lo), hiX);
+    ent.y = Math.min(Math.max(ent.y + dy, lo), hiY);
+    return false;
+  }
+  if (dx !== 0) {
+    if (!hitsWall(ent.x + dx, ent.y, radius)) ent.x += dx;
+    else blocked = true;
+  }
+  if (dy !== 0) {
+    if (!hitsWall(ent.x, ent.y + dy, radius)) ent.y += dy;
+    else blocked = true;
+  }
+  return blocked;
+}
 
-  // Add player (duck)
-  const player = k.add([
-    k.sprite('duck'),
-    k.scale(CONFIG.SPRITE_SCALES.player),
-    k.pos(k.center()),
-    k.area(),
-    k.body(),
-    k.anchor('center'),
-    k.z(CONFIG.Z_INDEX.player),
-    'player',
-    {
-      speed: CONFIG.MOVEMENT.playerSpeed,
-      flying: false,
-      flyTimer: 0,
-      pushingBomb: null,
+function dist(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+/** A free spot near (x, y) for a dropped item — never inside a wall. */
+function findDropSpot(x, y) {
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const range = C.TILE * (0.5 + attempt / 15);
+    const nx = x + (Math.random() * 2 - 1) * range;
+    const ny = y + (Math.random() * 2 - 1) * range;
+    if (nx > C.TILE && nx < C.WIDTH - C.TILE && ny > C.TILE && ny < C.HEIGHT - C.TILE
+        && !hitsWall(nx, ny, 12)) {
+      return { x: nx, y: ny };
     }
-  ]);
+  }
+  return { x, y };
+}
 
-  // Add bears
-  for (let i = 0; i < bearCount; i++) {
-    const isBoss = isBossLevel && i === bearCount - 1;
-    const bearSpeed = CONFIG.getBearSpeed(levelNum, isBoss);
+function dropItems(x, y, count) {
+  for (let i = 0; i < count; i++) {
+    const spot = findDropSpot(x, y);
+    game.items.push({
+      x: spot.x, y: spot.y,
+      kind: Math.random() < 0.5 ? 'honey' : 'salmon',
+      phase: Math.random() * Math.PI * 2,
+    });
+  }
+}
 
-    const bear = k.add([
-      k.sprite('bear'),
-      k.scale(isBoss ? CONFIG.SPRITE_SCALES.bearBoss : CONFIG.SPRITE_SCALES.bear),
-      k.pos(
-        k.rand(CONFIG.LEVEL_GEN.marginX, k.width() - CONFIG.LEVEL_GEN.marginX),
-        k.rand(CONFIG.LEVEL_GEN.marginY, k.height() - CONFIG.LEVEL_GEN.marginY)
-      ),
-      k.area(),
-      rgb(isBoss ? CONFIG.COLORS.bearBoss : CONFIG.COLORS.bear),
-      // Removed k.body() so player can pass through bears
-      k.anchor('center'),
-      k.z(CONFIG.Z_INDEX.bears),
-      isBoss ? 'boss-bear' : 'bear',
-      {
-        speed: bearSpeed,
-        angry: false,
-        angerTimer: 0,
-        moveDir: k.vec2(k.rand(-1, 1), k.rand(-1, 1)).unit(),
-        changeTimer: 0,
-        isBoss: isBoss,
-        hp: isBoss ? CONFIG.PROGRESSION.bossHP : 1,
-      }
-    ]);
+function spawnBurst(x, y, color, count, speed) {
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const v = speed * (0.4 + Math.random() * 0.6);
+    game.particles.push({
+      x, y,
+      vx: Math.cos(a) * v, vy: Math.sin(a) * v,
+      life: 0.4 + Math.random() * 0.4,
+      maxLife: 0.8,
+      color,
+      size: 3 + Math.random() * 4,
+    });
+  }
+}
 
-    // Boss bear visual indicator
-    if (isBoss) {
-      k.add([
-        k.text('BOSS', { size: CONFIG.TEXT.sizes.small }),
-        k.pos(bear.pos.add(0, -35)),
-        k.anchor('center'),
-        rgb(CONFIG.COLORS.bearAngry),
-        k.z(CONFIG.Z_INDEX.effects),
-        {
-          update() {
-            this.pos = bear.pos.add(0, -35);
-          }
-        }
-      ]);
+// ---------------------------------------------------------------------------
+// Actions
+// ---------------------------------------------------------------------------
+
+function doPeck() {
+  const p = game.player;
+  if (p.peckCooldown > 0) return;
+  p.peckCooldown = C.PECK_COOLDOWN;
+  p.peckTimer = 0.15;
+  sfx.peck();
+
+  // Nearest bear in range wins; otherwise try shoving a gray bomb.
+  let target = null, best = C.PECK_RANGE;
+  for (const bear of game.bears) {
+    const d = dist(p, bear);
+    if (d < best) { best = d; target = bear; }
+  }
+  if (target) { peckBear(target); return; }
+
+  let bomb = null;
+  best = C.PECK_RANGE;
+  for (const b of game.bombs) {
+    if (b.armed || b.sliding) continue;
+    const d = dist(p, b);
+    if (d < best) { best = d; bomb = b; }
+  }
+  if (bomb) {
+    // Shove along the duck's dominant facing axis so it slides on the grid.
+    const f = p.facing;
+    if (Math.abs(f.x) >= Math.abs(f.y)) { bomb.vx = Math.sign(f.x || 1) * C.BOMB_SLIDE_SPEED; bomb.vy = 0; }
+    else { bomb.vx = 0; bomb.vy = Math.sign(f.y) * C.BOMB_SLIDE_SPEED; }
+    bomb.sliding = true;
+    sfx.push();
+  }
+}
+
+function peckBear(bear) {
+  spawnBurst(bear.x, bear.y, '#ffe9a8', 8, 120);
+  if (bear.boss) {
+    bear.hp--;
+    dropItems(bear.x, bear.y, C.DROPS_PER_PECK);
+    if (bear.hp <= 0) {
+      dropItems(bear.x, bear.y, C.BOSS_DEFEAT_DROPS);
+      spawnBurst(bear.x, bear.y, '#b53a2e', 24, 220);
+      game.bears = game.bears.filter((b) => b !== bear);
+      game.shake = 8;
+      sfx.explosion();
+      return;
+    }
+  } else if (bear.carry > 0) {
+    const n = Math.min(C.DROPS_PER_PECK, bear.carry);
+    bear.carry -= n;
+    dropItems(bear.x, bear.y, n);
+  }
+  if (!bear.angry) sfx.angry();
+  bear.angry = true;
+  bear.grace = C.GRACE_PERIOD;
+}
+
+function explode(x, y) {
+  sfx.explosion();
+  game.shake = 12;
+  spawnBurst(x, y, '#ff9a3d', 30, 260);
+  spawnBurst(x, y, '#5d6d6e', 16, 180);
+
+  const radius = C.EXPLOSION_RADIUS * C.TILE;
+
+  // Blast open nearby walls (border stays).
+  for (let r = 0; r < C.ROWS; r++) {
+    for (let c = 0; c < C.COLS; c++) {
+      if (!isWall(game.grid, r, c)) continue;
+      const center = tileCenter(r, c);
+      if (Math.hypot(center.x - x, center.y - y) <= radius) setFloor(game.grid, r, c);
     }
   }
 
-  // Player movement
-  k.onKeyDown('left', () => {
-    player.move(-player.speed, 0);
-  });
+  // Bears caught in the blast are defeated and drop everything they carry.
+  for (const bear of [...game.bears]) {
+    if (Math.hypot(bear.x - x, bear.y - y) > radius) continue;
+    if (bear.boss) {
+      bear.hp--;
+      dropItems(bear.x, bear.y, C.DROPS_PER_PECK);
+      if (bear.hp > 0) continue;
+      dropItems(bear.x, bear.y, C.BOSS_DEFEAT_DROPS);
+    } else if (bear.carry > 0) {
+      dropItems(bear.x, bear.y, bear.carry);
+    }
+    spawnBurst(bear.x, bear.y, '#8d5a2b', 14, 160);
+    game.bears = game.bears.filter((b) => b !== bear);
+  }
 
-  k.onKeyDown('right', () => {
-    player.move(player.speed, 0);
-  });
+  const p = game.player;
+  if (game.state === 'play' && p.flyTimer <= 0 && Math.hypot(p.x - x, p.y - y) <= radius) {
+    killPlayer();
+  }
+}
 
-  k.onKeyDown('up', () => {
-    player.move(0, -player.speed);
-  });
+function killPlayer() {
+  if (game.state !== 'play') return;
+  sfx.death();
+  spawnBurst(game.player.x, game.player.y, '#f4d03f', 24, 220);
+  game.lives--;
+  game.state = game.lives > 0 ? 'dead' : 'gameover';
+  game.stateTimer = C.DEATH_PAUSE;
+}
 
-  k.onKeyDown('down', () => {
-    player.move(0, player.speed);
-  });
+// ---------------------------------------------------------------------------
+// Update
+// ---------------------------------------------------------------------------
 
-  // Update player
-  player.onUpdate(() => {
-    // Flying timer
-    if (player.flying) {
-      player.flyTimer -= k.dt();
-      if (player.flyTimer <= 0) {
-        player.flying = false;
-        player.color = rgb(CONFIG.COLORS.duck);
+function updatePlay(dt) {
+  const p = game.player;
+
+  // --- duck movement ---
+  let dx = 0, dy = 0;
+  if (keys.has('ArrowLeft') || keys.has('KeyA')) dx -= 1;
+  if (keys.has('ArrowRight') || keys.has('KeyD')) dx += 1;
+  if (keys.has('ArrowUp') || keys.has('KeyW')) dy -= 1;
+  if (keys.has('ArrowDown') || keys.has('KeyS')) dy += 1;
+  if (dx || dy) {
+    const len = Math.hypot(dx, dy);
+    p.facing = { x: dx / len, y: dy / len };
+    moveCircle(p, (dx / len) * C.DUCK_SPEED * dt, (dy / len) * C.DUCK_SPEED * dt,
+      C.DUCK_RADIUS, p.flyTimer > 0);
+  }
+
+  p.peckCooldown = Math.max(0, p.peckCooldown - dt);
+  p.peckTimer = Math.max(0, p.peckTimer - dt);
+  if (p.flyTimer > 0) {
+    p.flyTimer -= dt;
+    // Don't let flight end while hovering over a wall — nudge expiry.
+    if (p.flyTimer <= 0 && hitsWall(p.x, p.y, C.DUCK_RADIUS)) p.flyTimer = 0.1;
+  }
+
+  if (peckQueued) { doPeck(); }
+  peckQueued = false;
+
+  // --- bears ---
+  for (const bear of game.bears) {
+    bear.grace = Math.max(0, bear.grace - dt);
+    const radius = bear.boss ? C.BEAR_RADIUS * 2 : C.BEAR_RADIUS;
+    const wanderSpeed = C.getBearSpeed(game.level) * (bear.boss ? 0.8 : 1);
+
+    if (bear.angry) {
+      const speed = Math.min(wanderSpeed * C.BEAR_ANGRY_MULT, C.BEAR_MAX_SPEED);
+      const d = dist(bear, p) || 1;
+      const vx = ((p.x - bear.x) / d) * speed * dt;
+      const vy = ((p.y - bear.y) / d) * speed * dt;
+      moveCircle(bear, vx, 0, radius);
+      moveCircle(bear, 0, vy, radius);
+      if (vx) bear.facing = Math.sign(vx);
+    } else {
+      bear.wanderTimer -= dt;
+      if (bear.wanderTimer <= 0) {
+        bear.dir = Math.random() * Math.PI * 2;
+        bear.wanderTimer = 1 + Math.random() * 2;
+      }
+      const vx = Math.cos(bear.dir) * wanderSpeed * dt;
+      const vy = Math.sin(bear.dir) * wanderSpeed * dt;
+      if (moveCircle(bear, vx, vy, radius)) {
+        bear.dir = Math.random() * Math.PI * 2; // bounce off walls
+        bear.wanderTimer = 1 + Math.random() * 2;
+      }
+      if (vx) bear.facing = Math.sign(vx);
+    }
+
+    // An angry bear catches you — unless flying, or within the grace period.
+    if (bear.angry && bear.grace <= 0 && p.flyTimer <= 0
+        && dist(bear, p) < radius + C.DUCK_RADIUS - 6) {
+      killPlayer();
+      return;
+    }
+  }
+
+  // --- bombs ---
+  for (const bomb of [...game.bombs]) {
+    if (bomb.sliding) {
+      const nx = bomb.x + bomb.vx * dt;
+      const ny = bomb.y + bomb.vy * dt;
+      if (hitsWall(nx, ny, C.BOMB_RADIUS)) {
+        game.bombs = game.bombs.filter((b) => b !== bomb);
+        explode(nx, ny);
+        if (game.state !== 'play') return;
       } else {
-        // Pulsing cyan tint while flying
-        const pulse = Math.sin(k.time() * CONFIG.ANIMATION.flyingPulseSpeed) * 0.5 + 0.5;
-        const [r, g, b] = CONFIG.COLORS.flyingTint;
-        player.color = k.rgb(
-          r + pulse * (255 - r),
-          g + pulse * (255 - g),
-          b
-        );
+        bomb.x = nx;
+        bomb.y = ny;
       }
-    }
-
-    // Keep player on screen
-    player.pos.x = k.clamp(player.pos.x, 20, k.width() - 20);
-    player.pos.y = k.clamp(player.pos.y, 20, k.height() - 20);
-  });
-
-  // Collision with obstacles
-  if (!player.flying) {
-    player.onCollide('obstacle', (obs) => {
-      // Can't pass through obstacles unless flying
-    });
-  }
-
-  // Peck mechanic (spacebar)
-  k.onKeyPress('space', () => {
-    const bears = k.get('bear').concat(k.get('boss-bear'));
-
-    bears.forEach(b => {
-      const dist = player.pos.dist(b.pos);
-
-      if (dist < CONFIG.INTERACTION.peckRange) {
-        if (!b.angry) {
-          // First peck - make angry
-          b.angry = true;
-          b.angerTimer = CONFIG.INTERACTION.angerGracePeriod;
-          b.color = rgb(CONFIG.COLORS.bearAngry);
-          b.speed *= 1.5;
-
-          // Drop items (enough to complete the level)
-          for (let i = 0; i < itemsPerBear; i++) {
-            const itemType = i % 2 === 0 ? 'honey' : 'salmon';
-            dropItem(itemType, b.pos.add(k.rand(-30, 30), k.rand(-30, 30)));
-          }
-        } else if (b.isBoss) {
-          // Boss takes multiple pecks
-          b.hp--;
-
-          if (b.hp <= 0) {
-            // Boss defeated - drops lots of items
-            for (let i = 0; i < itemsPerBear; i++) {
-              const itemType = i % 2 === 0 ? 'honey' : 'salmon';
-              dropItem(itemType, b.pos.add(k.rand(-40, 40), k.rand(-40, 40)));
-            }
-            k.destroy(b);
-          }
-        }
-
-        // Visual feedback
-        k.add([
-          k.text(b.isBoss ? `PECK! HP: ${b.hp}` : 'PECK!', { size: CONFIG.TEXT.sizes.feedback }),
-          k.pos(b.pos),
-          k.anchor('center'),
-          rgb(CONFIG.COLORS.uiText),
-          k.lifespan(CONFIG.ANIMATION.feedbackDuration),
-          k.move(k.UP, CONFIG.ANIMATION.feedbackMoveSpeed),
-          k.z(CONFIG.Z_INDEX.effects),
-        ]);
-      }
-    });
-
-    // Push unarmed bombs
-    const bombs = k.get('bomb');
-    bombs.forEach(bomb => {
-      const dist = player.pos.dist(bomb.pos);
-      if (dist < CONFIG.INTERACTION.peckRange && bomb.pushable) {
-        // Push bomb away from player
-        const pushDir = bomb.pos.sub(player.pos).unit();
-        bomb.moveTo(bomb.pos.add(pushDir.scale(100)), CONFIG.MOVEMENT.bombPushSpeed);
-
-        // Check if bomb hits obstacle
-        bomb.onCollide('obstacle', (obs) => {
-          if (obs.destructible) {
-            // Explode!
-            k.add([
-              k.circle(30),
-              rgb(CONFIG.COLORS.explosion),
-              k.pos(bomb.pos),
-              k.anchor('center'),
-              k.opacity(0.8),
-              k.lifespan(CONFIG.ANIMATION.explosionDuration),
-              k.z(CONFIG.Z_INDEX.effects),
-            ]);
-
-            k.destroy(obs);
-            k.destroy(bomb);
-          }
-        });
-      }
-    });
-  });
-
-  // Bear AI
-  k.onUpdate('bear', (b) => {
-    updateBearAI(b, player);
-  });
-
-  k.onUpdate('boss-bear', (b) => {
-    updateBearAI(b, player);
-  });
-
-  function updateBearAI(b, player) {
-    b.changeTimer -= k.dt();
-
-    // Count down anger grace period
-    if (b.angerTimer > 0) {
-      b.angerTimer -= k.dt();
-    }
-
-    // Change direction occasionally
-    if (b.changeTimer <= 0) {
-      if (b.angry) {
-        // Angry bears chase the player
-        b.moveDir = player.pos.sub(b.pos).unit();
-      } else {
-        // Peaceful bears wander randomly
-        b.moveDir = k.vec2(k.rand(-1, 1), k.rand(-1, 1)).unit();
-      }
-      b.changeTimer = k.rand(1, 3);
-    }
-
-    // Store old position for collision detection
-    const oldPos = b.pos.clone();
-    b.move(b.moveDir.scale(b.speed));
-
-    // Check collision with obstacles
-    const obstacles = k.get('obstacle');
-    let hitObstacle = false;
-
-    obstacles.forEach(obs => {
-      if (b.isColliding(obs)) {
-        hitObstacle = true;
-      }
-    });
-
-    // If hit obstacle, revert and bounce
-    if (hitObstacle) {
-      b.pos = oldPos;
-      b.moveDir.x *= -1;
-      b.moveDir.y *= -1;
-      b.changeTimer = 0; // Force new direction
-    }
-
-    // Bounce off screen edges
-    if (b.pos.x < 30 || b.pos.x > k.width() - 30) {
-      b.moveDir.x *= -1;
-      b.pos.x = k.clamp(b.pos.x, 30, k.width() - 30);
-    }
-    if (b.pos.y < 30 || b.pos.y > k.height() - 30) {
-      b.moveDir.y *= -1;
-      b.pos.y = k.clamp(b.pos.y, 30, k.height() - 30);
+    } else if (bomb.armed && p.flyTimer <= 0
+        && dist(bomb, p) < C.BOMB_RADIUS + C.DUCK_RADIUS - 6) {
+      game.bombs = game.bombs.filter((b) => b !== bomb);
+      explode(bomb.x, bomb.y);
+      if (game.state !== 'play') return;
     }
   }
 
-  // Drop item function
-  function dropItem(type, pos) {
-    const itemColor = type === 'honey'
-      ? rgb(CONFIG.COLORS.honey)
-      : rgb(CONFIG.COLORS.salmon);
-
-    // Check if position is inside an obstacle
-    let finalPos = pos;
-    let attempts = 0;
-    let validPos = false;
-
-    while (!validPos && attempts < 10) {
-      // Create temporary item to test collision
-      const testItem = k.add([
-        k.circle(CONFIG.ENTITY_SIZES.item.radius),
-        k.pos(finalPos),
-        k.area(),
-        k.anchor('center'),
-      ]);
-
-      // Check if it collides with any obstacle
-      const obstacles = k.get('obstacle');
-      let colliding = false;
-
-      for (const obs of obstacles) {
-        if (testItem.isColliding(obs)) {
-          colliding = true;
-          break;
-        }
-      }
-
-      k.destroy(testItem);
-
-      if (!colliding) {
-        validPos = true;
-      } else {
-        // Try a new random position closer to center
-        attempts++;
-        const angle = k.rand(0, Math.PI * 2);
-        const dist = k.rand(10, 40);
-        finalPos = pos.add(
-          Math.cos(angle) * dist,
-          Math.sin(angle) * dist
-        );
-      }
+  // --- pickups ---
+  for (const item of [...game.items]) {
+    if (dist(item, p) < C.DUCK_RADIUS + 14) {
+      game.items = game.items.filter((i) => i !== item);
+      game.collected++;
+      sfx.collect();
+      spawnBurst(item.x, item.y, item.kind === 'honey' ? '#f0b429' : '#f08080', 6, 90);
     }
-
-    // Add the actual item
-    k.add([
-      k.circle(CONFIG.ENTITY_SIZES.item.radius),
-      itemColor,
-      k.pos(finalPos),
-      k.area(),
-      k.anchor('center'),
-      k.z(CONFIG.Z_INDEX.items),
-      'item',
-      { type }
-    ]);
+  }
+  if (game.powerup && dist(game.powerup, p) < C.DUCK_RADIUS + 16) {
+    game.powerup = null;
+    p.flyTimer = C.FLY_DURATION;
+    sfx.power();
+    spawnBurst(p.x, p.y, '#4dd0e1', 16, 150);
   }
 
-  // Collect items
-  player.onCollide('item', (item) => {
-    k.destroy(item);
-    itemsCollected++;
+  if (game.collected >= game.needed) {
+    game.state = 'clear';
+    game.stateTimer = C.LEVEL_CLEAR_PAUSE;
+    if (game.level === C.MAX_LEVEL) sfx.victory();
+    else sfx.clear();
+  }
+}
 
-    // TODO: Add sound effect later
-    // k.play('collect');
+function update(dt) {
+  game.time += dt;
+  game.shake = Math.max(0, game.shake - dt * 30);
 
-    // Check win condition
-    if (itemsCollected >= itemsNeeded) {
-      k.go('levelComplete', currentLevel);
+  for (const part of [...game.particles]) {
+    part.life -= dt;
+    if (part.life <= 0) { game.particles = game.particles.filter((q) => q !== part); continue; }
+    part.x += part.vx * dt;
+    part.y += part.vy * dt;
+    part.vx *= 0.92;
+    part.vy *= 0.92;
+  }
+
+  switch (game.state) {
+    case 'play':
+      updatePlay(dt);
+      break;
+    case 'clear':
+      game.stateTimer -= dt;
+      if (game.stateTimer <= 0) {
+        if (game.level >= C.MAX_LEVEL) game.state = 'victory';
+        else startLevel(game.level + 1);
+      }
+      break;
+    case 'dead':
+      game.stateTimer -= dt;
+      if (game.stateTimer <= 0) startLevel(game.level);
+      break;
+  }
+  peckQueued = false;
+}
+
+// ---------------------------------------------------------------------------
+// Render
+// ---------------------------------------------------------------------------
+
+function drawSprite(img, x, y, { flip = false, scale = 1 } = {}) {
+  const w = img.width * scale;
+  const h = img.height * scale;
+  ctx.save();
+  ctx.translate(x, y);
+  if (flip) ctx.scale(-1, 1);
+  ctx.drawImage(img, -w / 2, -h / 2, w, h);
+  ctx.restore();
+}
+
+function render() {
+  ctx.save();
+  if (game.shake > 0) {
+    ctx.translate((Math.random() - 0.5) * game.shake, (Math.random() - 0.5) * game.shake);
+  }
+
+  if (game.background) ctx.drawImage(game.background, 0, 0);
+  else { ctx.fillStyle = C.COLORS.grass; ctx.fillRect(0, 0, C.WIDTH, C.HEIGHT); }
+
+  if (game.grid) {
+    for (let r = 0; r < C.ROWS; r++) {
+      for (let c = 0; c < C.COLS; c++) {
+        if (isWall(game.grid, r, c)) ctx.drawImage(sprites.rock, c * C.TILE, r * C.TILE);
+      }
     }
-  });
+  }
 
-  // Collect power-ups
-  player.onCollide('powerup', (powerup) => {
-    if (powerup.type === 'fly') {
-      player.flying = true;
-      player.flyTimer = CONFIG.INTERACTION.flyDuration;
+  for (const item of game.items) {
+    const bob = Math.sin(game.time * 4 + item.phase) * 3;
+    drawSprite(item.kind === 'honey' ? sprites.honey : sprites.salmon, item.x, item.y + bob);
+  }
 
-      k.add([
-        k.text('FLYING!', { size: CONFIG.TEXT.sizes.heading }),
-        k.pos(player.pos),
-        k.anchor('center'),
-        rgb(CONFIG.COLORS.powerup),
-        k.lifespan(1),
-        k.move(k.UP, CONFIG.ANIMATION.feedbackMoveSpeed),
-        k.z(CONFIG.Z_INDEX.effects),
-      ]);
+  for (const bomb of game.bombs) {
+    if (bomb.armed) {
+      // Pulsing red warning glow on armed bombs.
+      const pulse = 0.5 + 0.5 * Math.sin(game.time * 10);
+      ctx.fillStyle = `rgba(231, 76, 60, ${0.25 + pulse * 0.3})`;
+      ctx.beginPath();
+      ctx.arc(bomb.x, bomb.y, 24 + pulse * 6, 0, Math.PI * 2);
+      ctx.fill();
+      drawSprite(sprites.bombArmed, bomb.x, bomb.y);
+    } else {
+      drawSprite(sprites.bombGray, bomb.x, bomb.y);
     }
+  }
 
-    k.destroy(powerup);
-  });
+  if (game.powerup) {
+    const bob = Math.sin(game.time * 3) * 4;
+    ctx.fillStyle = 'rgba(77, 208, 225, 0.25)';
+    ctx.beginPath();
+    ctx.arc(game.powerup.x, game.powerup.y + bob, 26, 0, Math.PI * 2);
+    ctx.fill();
+    drawSprite(sprites.diamond, game.powerup.x, game.powerup.y + bob);
+  }
 
-  // Armed bomb collision - game over!
-  player.onCollide('armed-bomb', () => {
-    k.go('gameOver', currentLevel);
-  });
-
-  // Angry bear collision - game over!
-  player.onCollide('bear', (bear) => {
-    if (bear.angry && bear.angerTimer <= 0) {
-      k.go('gameOver', currentLevel);
-    }
-  });
-
-  player.onCollide('boss-bear', (bear) => {
-    if (bear.angry && bear.angerTimer <= 0) {
-      k.go('gameOver', currentLevel);
-    }
-  });
-
-  // UI
-  k.add([
-    k.text(() => `Level ${currentLevel}${isBossLevel ? ' - BOSS!' : ''}`, { size: CONFIG.TEXT.sizes.ui }),
-    k.pos(CONFIG.TEXT.positions.uiPadding, CONFIG.TEXT.positions.uiPadding),
-    rgb(CONFIG.COLORS.uiText),
-    k.fixed(),
-    k.z(CONFIG.Z_INDEX.ui),
-  ]);
-
-  k.add([
-    k.text(() => `Items: ${itemsCollected}/${itemsNeeded}`, { size: CONFIG.TEXT.sizes.ui }),
-    k.pos(CONFIG.TEXT.positions.uiPadding, CONFIG.TEXT.positions.uiPadding + CONFIG.TEXT.positions.lineHeight),
-    rgb(CONFIG.COLORS.uiText),
-    k.fixed(),
-    k.z(CONFIG.Z_INDEX.ui),
-  ]);
-
-  k.add([
-    k.text(() => player.flying ? `Flying: ${player.flyTimer.toFixed(1)}s` : '', { size: CONFIG.TEXT.sizes.body }),
-    k.pos(CONFIG.TEXT.positions.uiPadding, CONFIG.TEXT.positions.uiPadding + CONFIG.TEXT.positions.lineHeight * 2),
-    rgb(CONFIG.COLORS.powerup),
-    k.fixed(),
-    k.z(CONFIG.Z_INDEX.ui),
-  ]);
-});
-
-// Game Over scene
-k.scene('gameOver', (levelNum) => {
-  k.add([
-    k.text('GAME OVER!', { size: CONFIG.TEXT.sizes.title }),
-    k.pos(k.center()),
-    k.anchor('center'),
-    rgb(CONFIG.COLORS.bearAngry),
-  ]);
-
-  k.add([
-    k.text('Caught by an angry bear!', { size: CONFIG.TEXT.sizes.body }),
-    k.pos(k.center().add(0, 50)),
-    k.anchor('center'),
-    rgb(CONFIG.COLORS.uiText),
-  ]);
-
-  k.add([
-    k.text('Press SPACE to retry', { size: CONFIG.TEXT.sizes.subheading }),
-    k.pos(k.center().add(0, 90)),
-    k.anchor('center'),
-    rgb(CONFIG.COLORS.duck),
-  ]);
-
-  k.onKeyPress('space', () => {
-    k.go('game', levelNum);
-  });
-});
-
-// Level complete scene
-k.scene('levelComplete', (levelNum) => {
-  if (levelNum >= CONFIG.PROGRESSION.bossLevel) {
-    // Victory!
-    k.add([
-      k.text('YOU WIN!', { size: CONFIG.TEXT.sizes.title }),
-      k.pos(k.center().sub(0, 40)),
-      k.anchor('center'),
-      rgb(CONFIG.COLORS.uiAccent),
-    ]);
-
-    k.add([
-      k.text(`All ${CONFIG.PROGRESSION.bossLevel} levels complete!`, { size: CONFIG.TEXT.sizes.subheading }),
-      k.pos(k.center().add(0, 20)),
-      k.anchor('center'),
-      rgb(CONFIG.COLORS.uiText),
-    ]);
-
-    k.add([
-      k.text('Press SPACE to play again', { size: CONFIG.TEXT.sizes.body }),
-      k.pos(k.center().add(0, 60)),
-      k.anchor('center'),
-      rgb(CONFIG.COLORS.uiText),
-    ]);
-
-    k.onKeyPress('space', () => {
-      k.go('start');
+  for (const bear of game.bears) {
+    // Blink through the grace period so "angry but harmless" reads clearly.
+    if (bear.angry && bear.grace > 0 && Math.floor(game.time * 12) % 2 === 0) continue;
+    drawSprite(bear.angry ? sprites.bearAngry : sprites.bear, bear.x, bear.y, {
+      flip: bear.facing < 0,
+      scale: bear.boss ? 2 : 1,
     });
-  } else {
-    k.add([
-      k.text('Level Complete!', { size: CONFIG.TEXT.sizes.heading }),
-      k.pos(k.center()),
-      k.anchor('center'),
-      rgb(CONFIG.COLORS.uiAccent),
-    ]);
+    if (bear.boss) {
+      ctx.fillStyle = '#1d1d1d';
+      ctx.fillRect(bear.x - 26, bear.y - 58, 52, 8);
+      ctx.fillStyle = C.COLORS.danger;
+      ctx.fillRect(bear.x - 24, bear.y - 56, 48 * (bear.hp / C.BOSS_HP), 4);
+    }
+  }
 
-    k.add([
-      k.text(`Press SPACE for Level ${levelNum + 1}`, { size: CONFIG.TEXT.sizes.subheading }),
-      k.pos(k.center().add(0, 50)),
-      k.anchor('center'),
-      rgb(CONFIG.COLORS.uiText),
-    ]);
-
-    k.onKeyPress('space', () => {
-      k.go('game', levelNum + 1);
+  if (game.player && game.state !== 'dead' && game.state !== 'gameover') {
+    const p = game.player;
+    const flying = p.flyTimer > 0;
+    const bob = flying ? Math.sin(game.time * 8) * 4 - 10 : 0;
+    if (flying) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y + 18, 16, 6, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    const lunge = p.peckTimer > 0 ? 8 : 0;
+    drawSprite(sprites.duck, p.x + p.facing.x * lunge, p.y + p.facing.y * lunge + bob, {
+      flip: p.facing.x < 0,
+      scale: flying ? 1.12 : 1,
     });
   }
-});
 
-// Start screen
-k.scene('start', () => {
-  k.add([
-    k.text('BEAR DUCK', { size: CONFIG.TEXT.sizes.title }),
-    k.pos(k.center().sub(0, 80)),
-    k.anchor('center'),
-    rgb(CONFIG.COLORS.duck),
-  ]);
+  for (const part of game.particles) {
+    ctx.globalAlpha = Math.max(part.life / part.maxLife, 0);
+    ctx.fillStyle = part.color;
+    ctx.fillRect(part.x - part.size / 2, part.y - part.size / 2, part.size, part.size);
+  }
+  ctx.globalAlpha = 1;
 
-  k.add([
-    k.text('Help the duck collect honey & salmon!', { size: CONFIG.TEXT.sizes.body }),
-    k.pos(k.center().sub(0, 20)),
-    k.anchor('center'),
-    rgb(CONFIG.COLORS.uiText),
-  ]);
+  ctx.restore();
 
-  k.add([
-    k.text('Peck bears to make them drop items', { size: CONFIG.TEXT.sizes.small }),
-    k.pos(k.center().add(0, 5)),
-    k.anchor('center'),
-    rgb(CONFIG.COLORS.uiText),
-  ]);
+  drawHud();
+  drawOverlays();
+}
 
-  k.add([
-    k.text('but watch out - they get angry!', { size: CONFIG.TEXT.sizes.small }),
-    k.pos(k.center().add(0, 25)),
-    k.anchor('center'),
-    rgb(CONFIG.COLORS.uiText),
-  ]);
+function drawHud() {
+  if (game.state === 'title') return;
+  // Dark bar over the top border row so the HUD stays readable.
+  ctx.fillStyle = 'rgba(13, 17, 23, 0.85)';
+  ctx.fillRect(0, 0, C.WIDTH, C.TILE);
+  ctx.font = 'bold 22px "Courier New", monospace';
+  ctx.textBaseline = 'middle';
+  const y = C.TILE / 2;
 
-  k.add([
-    k.text('Arrow Keys: Move | Space: Peck/Push', { size: CONFIG.TEXT.sizes.small }),
-    k.pos(k.center().add(0, 55)),
-    k.anchor('center'),
-    rgb(CONFIG.COLORS.uiText),
-  ]);
+  ctx.textAlign = 'left';
+  ctx.fillStyle = C.COLORS.hudText;
+  ctx.fillText(`LV ${game.level}/${C.MAX_LEVEL}`, 16, y);
 
-  k.add([
-    k.text('Press SPACE to Start', { size: CONFIG.TEXT.sizes.subheading }),
-    k.pos(k.center().add(0, 95)),
-    k.anchor('center'),
-    rgb(CONFIG.COLORS.powerup),
-  ]);
+  ctx.drawImage(sprites.honey, 150, y - 24);
+  ctx.drawImage(sprites.salmon, 186, y - 24);
+  ctx.fillText(`${game.collected}/${game.needed}`, 240, y);
 
-  k.onKeyPress('space', () => {
-    k.go('game', 1);
-  });
-});
+  ctx.fillStyle = C.COLORS.danger;
+  ctx.fillText('♥'.repeat(game.lives) || '', 340, y);
+  ctx.fillStyle = C.COLORS.hudDim;
+  ctx.fillText('♥'.repeat(C.START_LIVES - game.lives), 340 + game.lives * 22, y);
 
-// Start the game
-console.log('Game initialized, starting...');
-console.log('Config loaded:', CONFIG);
-k.go('start');
+  if (game.player && game.player.flyTimer > 0) {
+    ctx.fillStyle = C.COLORS.fly;
+    ctx.fillText('FLY', 460, y);
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.fillRect(520, y - 8, 120, 16);
+    ctx.fillStyle = C.COLORS.fly;
+    ctx.fillRect(520, y - 8, 120 * (game.player.flyTimer / C.FLY_DURATION), 16);
+  }
+
+  ctx.textAlign = 'right';
+  ctx.fillStyle = C.COLORS.hudDim;
+  ctx.fillText('ARROWS move · SPACE peck', C.WIDTH - 16, y);
+}
+
+function centered(text, y, size, color) {
+  ctx.font = `bold ${size}px "Courier New", monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = color;
+  ctx.fillText(text, C.WIDTH / 2, y);
+}
+
+function drawOverlays() {
+  const blink = Math.floor(game.time * 2) % 2 === 0;
+
+  if (game.state === 'title') {
+    ctx.fillStyle = C.COLORS.night;
+    ctx.fillRect(0, 0, C.WIDTH, C.HEIGHT);
+    centered('BEAR DUCK', 170, 72, C.COLORS.honey);
+    centered('SANDWICH SHOP RUSH', 230, 28, C.COLORS.hudText);
+    drawSprite(sprites.duck, C.WIDTH / 2 - 120, 320, { scale: 2 });
+    drawSprite(sprites.bear, C.WIDTH / 2 + 120, 320, { scale: 2 });
+    centered('Your bee friends want their honey back — and the', 410, 20, C.COLORS.hudDim);
+    centered('sandwich shop needs salmon. The bears have both.', 438, 20, C.COLORS.hudDim);
+    centered('ARROWS / WASD move · SPACE peck bears & shove bombs', 500, 20, C.COLORS.hudText);
+    centered('Pecked bears get ANGRY. Run.', 530, 20, C.COLORS.danger);
+    if (blink) centered('PRESS ENTER TO START', 610, 26, C.COLORS.fly);
+  }
+
+  if (game.state === 'clear' && game.level < C.MAX_LEVEL) {
+    centered(`LEVEL ${game.level} CLEAR!`, C.HEIGHT / 2 - 20, 48, C.COLORS.honey);
+    centered('The sandwich orders are filled. Onward!', C.HEIGHT / 2 + 30, 22, C.COLORS.hudText);
+  }
+
+  if (game.state === 'dead') {
+    centered('CAUGHT!', C.HEIGHT / 2 - 20, 48, C.COLORS.danger);
+    centered(`${game.lives} ${game.lives === 1 ? 'life' : 'lives'} left`, C.HEIGHT / 2 + 30, 22, C.COLORS.hudText);
+  }
+
+  if (game.state === 'gameover') {
+    ctx.fillStyle = C.COLORS.night;
+    ctx.fillRect(0, 0, C.WIDTH, C.HEIGHT);
+    centered('GAME OVER', C.HEIGHT / 2 - 60, 64, C.COLORS.danger);
+    centered(`You reached level ${game.level}`, C.HEIGHT / 2 + 10, 24, C.COLORS.hudText);
+    if (blink) centered('PRESS ENTER TO TRY AGAIN', C.HEIGHT / 2 + 80, 24, C.COLORS.fly);
+  }
+
+  if (game.state === 'victory' || (game.state === 'clear' && game.level === C.MAX_LEVEL)) {
+    ctx.fillStyle = C.COLORS.night;
+    ctx.fillRect(0, 0, C.WIDTH, C.HEIGHT);
+    centered('VICTORY!', 200, 72, C.COLORS.honey);
+    drawSprite(sprites.duck, C.WIDTH / 2, 300, { scale: 3 });
+    centered('The boss bear is beaten. The bees have their honey,', 400, 22, C.COLORS.hudText);
+    centered('the shop has its salmon — sandwiches for everyone!', 430, 22, C.COLORS.hudText);
+    if (game.state === 'victory' && blink) {
+      centered('PRESS ENTER TO PLAY AGAIN', 520, 24, C.COLORS.fly);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Main loop
+// ---------------------------------------------------------------------------
+
+// Handle for debugging and automated tests.
+window.__game = game;
+
+let lastTime = performance.now();
+function frame(now) {
+  const dt = Math.min((now - lastTime) / 1000, 1 / 30);
+  lastTime = now;
+  update(dt);
+  render();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);

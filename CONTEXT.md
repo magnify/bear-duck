@@ -1,148 +1,79 @@
-# Bear Duck - Development Context
+# Bear Duck — Development Context
 
 ## Project Overview
-A retro 2D pixel art game where a duck runs a salmon & honey sandwich shop and needs to collect ingredients by pecking bears.
+A retro 2D pixel art game where a duck runs a salmon & honey sandwich shop and
+collects ingredients by pecking bears.
 
-**Story:** Duck has bee friends who want honey back. Duck needs salmon for its sandwich shop where it sells sandwiches with salmon and honey (gets a bit of honey from bees for sandwiches).
+**Story:** Duck has bee friends who want their honey back. Duck needs salmon
+for its sandwich shop, where it sells salmon & honey sandwiches.
 
-## Current Status: ✅ Core Gameplay Complete
+## v2: Full from-scratch rewrite (this branch)
+The game was rebuilt from scratch, reusing only the idea — no code or assets
+were carried over from the Kaboom.js version on `master`.
 
-### What's Working
-- ✅ Top-down Zelda-style movement (arrow keys)
-- ✅ Peck mechanic (spacebar) - peck bears to make them drop items
-- ✅ Bears become angry after being pecked (turn red, chase player, faster)
-- ✅ 1-second grace period after pecking to escape
-- ✅ Item collection system (honey & salmon)
-- ✅ 20 levels with scaling difficulty
-- ✅ Multiple bears per level (scales with level)
-- ✅ Obstacles/maze walls (bears bounce off them)
-- ✅ Bombs: red flashing = armed (avoid!), gray = unarmed (push into walls to explode)
-- ✅ Flying power-up (cyan diamond, fly over obstacles for 5 seconds)
-- ✅ Boss bear on level 20 (bigger, takes 3 pecks, drops lots of items)
-- ✅ Game over on angry bear collision or armed bomb
-- ✅ Victory screen after level 20
-- ✅ Item drop math fixed - each bear drops correct amount to complete level
-- ✅ Items won't spawn inside walls
+- **Zero runtime dependencies.** Raw `<canvas>` 2D API, `requestAnimationFrame`
+  game loop. Kaboom.js (deprecated) is gone.
+- **No image assets.** All sprites are 16×16 pixel maps baked to offscreen
+  canvases at startup (`src/sprites.js`). The Kenney asset packs were removed.
+- **No audio assets.** Sound effects are synthesized with WebAudio oscillators
+  and noise buffers (`src/audio.js`).
+- **Generated levels.** Random wall clusters, flood-filled from spawn so every
+  open tile is always reachable (`src/level.js`).
 
-### Tech Stack
-- **Framework:** Kaboom.js (note: deprecated, successor is KAPLAY)
-- **Build tool:** Vite
+## Game Mechanics (same idea as v1)
+1. **Peck bears** (spacebar) → they drop honey/salmon items
+2. **Collect items** → progress toward the level goal
+3. **Avoid angry bears** — pecked bears turn red and chase you (1s grace period to escape)
+4. **Gray bombs** — shove them (spacebar) into walls to blast passages open
+5. **Armed bombs** — red, flashing: touching one is instant death
+6. **Flying power-up** (cyan diamond) on levels 3, 7, 11, 15, 19 — fly over everything for 5s
+7. **Boss bear** on level 20 — double size, 3 pecks to defeat, drops an item burst
+8. **3 lives** — getting caught respawns you on the current (re-rolled) level
+
+## Progression
+- Items needed: 6 on level 1, +1 per level, capped at 15
+- Bears: 1 to start, +1 every 4 levels (max 6); level 20 = 4 bears + boss
+- Bears get 10% faster per level (angry speed capped below duck speed)
+- More walls/maze each level; bombs appear from level 2 (armed) / 4 (pushable)
+- Each bear carries `ceil(needed / bears) + 1` items, so the total dropped
+  always exceeds the goal — levels can't become unwinnable
+- Bomb blasts also defeat bears, who drop everything they carry
+
+## Controls
+- **Arrow keys / WASD:** move
+- **Spacebar:** peck bear / shove bomb
+- **Enter:** start / restart
+
+## Tech
+- Vanilla ES modules + HTML5 canvas (no framework)
+- **Build tool:** Vite (dev-only dependency)
 - **Dev server:** `npm run dev` → http://localhost:5173
-
-### Game Mechanics
-1. **Peck bears** → they drop honey/salmon items
-2. **Collect items** → progress toward level goal
-3. **Avoid angry bears** (they chase you after being pecked)
-4. **Use bombs** to destroy obstacles (push gray bombs into walls)
-5. **Avoid armed bombs** (red flashing = instant death)
-6. **Flying power-up** on levels 3, 7, 11, 15, 19 (fly over obstacles)
-
-### Progression System
-- **Items needed:** Level 1 = 6 items, scales up to max 15 items
-- **Bears:** Start with 1, +1 every 4 levels (max 6)
-- **Bear speed:** 10% faster each level
-- **Obstacles:** More walls/maze complexity each level
-- **Level 20:** Boss level with 5 small bears + 1 big boss bear (3 HP)
-
-### Current Graphics
-- ✅ Duck = Kenney pixel art sprite (duck.png)
-- ✅ Bear = Kenney pixel art sprite (bear.png, tinted red when angry, scaled 3x for boss)
-- Honey = yellow circle (placeholder)
-- Salmon = pink circle (placeholder)
-- Obstacles = gray rectangles (placeholder)
-- Bombs = red/gray circles (placeholder)
-- Power-up = cyan rotating diamond (placeholder)
-
-### Controls
-- **Arrow Keys:** Move duck
-- **Spacebar:** Peck bear / Push bomb
-
-## Next Steps
-1. ✅ **Pixel art for duck & bear** - Downloaded Kenney Animal Pack Redux (CC0)
-2. **Replace remaining placeholders:**
-   - Find/create sprites for honey, salmon, bombs, walls, power-up
-   - Consider using Kenney Micro Roguelike pack for items
-3. **Add sound effects** (peck, collect, explosion, game over)
-4. **Polish:** particle effects, screen shake, better UI
-5. **Consider migration** to KAPLAY (Kaboom successor)
-6. **Rename repository?** Current: bear-duck, suggested: duck-sandwich-shop or similar
-
-## Known Issues / Design Decisions
-- ✅ FIXED: Bears walking through walls → now bounce off
-- ✅ FIXED: Instant game over after peck → 1-second grace period
-- ✅ FIXED: Not enough items to win → dynamic item drops per bear
-- ✅ FIXED: Items spawning in walls → collision check with retries
-- Grace period shows visually (bear turns red but won't hurt you for 1 sec)
-
-## Repository
-- **GitHub:** https://github.com/magnify/bear-duck
-- **Branch:** master
-- **All code committed and pushed** ✅
-
-## Child Producer Feedback Incorporated
-- Bombs mechanic (armed vs unarmed)
-- Flying ability
-- Multiple small bears + big boss bear
-- Angry bear chase mechanic
-- Pecking animation/feedback
 
 ## File Structure
 ```
 bear-duck/
-├── index.html          # Game container
-├── package.json        # Dependencies
+├── index.html        # Canvas container
+├── package.json
 ├── src/
-│   ├── config.js      # 🎨 Design system (all constants)
-│   └── main.js        # Game logic (700+ lines)
-├── public/
-│   ├── assets/        # Duck & bear sprites
-│   └── sprites/       # Full Kenney asset packs
-├── .gitignore
-└── CONTEXT.md         # This file
+│   ├── config.js     # All constants + progression formulas (single source of truth)
+│   ├── sprites.js    # Procedural pixel art + background baking
+│   ├── audio.js      # WebAudio-synthesized sound effects
+│   ├── level.js      # Grid generation, flood fill, entity placement
+│   └── main.js       # Game loop, entities, states, rendering, HUD
+└── CONTEXT.md        # This file
 ```
-
-## Design System (src/config.js)
-
-**Single source of truth** for all game constants:
-- Grid system (16px base unit)
-- Sprite scales and entity sizes
-- Movement speeds, interaction ranges
-- Level progression formulas with helper functions
-- Complete color palette
-- Typography scales
-- Animation timing
-- Z-index layers
-
-**Key helpers:**
-```js
-CONFIG.getItemsNeeded(level)      // Items required for level
-CONFIG.getBearCount(level)        // Number of bears
-CONFIG.getBearSpeed(level)        // Speed with scaling
-CONFIG.getItemsPerBear()          // Ensures level is winnable
-```
-
-**Benefits:**
-- No magic numbers in code
-- Consistent sizing and spacing
-- Easy balance adjustments
-- All values have semantic names
 
 ## Commands
 ```bash
-npm install           # Install dependencies
-npm run dev          # Start dev server
-npm run build        # Build for production
-npm run preview      # Preview production build
+npm install    # Install dev dependencies (vite only)
+npm run dev    # Start dev server
+npm run build  # Production build to dist/
+npm run preview
 ```
 
-## Game Balance Notes
-- Level 1: 1 bear, 6 items needed
-- Level 5: 2 bears, 10 items needed
-- Level 10: 3 bears, 15 items needed (caps at 15)
-- Level 20: 5 bears (4 small + 1 boss), 15 items needed
-
-Boss bear drops items equal to itemsPerBear on defeat.
+## Repository
+- **GitHub:** https://github.com/magnify/bear-duck
+- v1 (Kaboom.js) lives on `master`; the rewrite is on `claude/game-from-scratch-3jdnzr`
 
 ---
-*Last updated: 2026-04-06*
-*Dev server running on port 5173*
+*Last updated: 2026-06-12*
